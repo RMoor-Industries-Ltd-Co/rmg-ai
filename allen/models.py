@@ -30,6 +30,7 @@ class DirectRequest(BaseModel):
     brand: str
     persona: Optional[str] = None
     intensity: Optional[str] = None
+    stability_mode: Optional[str] = None  # creative | natural | robust (override)
 
 
 class DirectResponse(BaseModel):

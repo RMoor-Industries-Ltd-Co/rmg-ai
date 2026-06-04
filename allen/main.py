@@ -37,6 +37,12 @@ def get_brands() -> list[dict[str, str]]:
     return brands.list_brands()
 
 
+@app.get("/emotion/profiles")
+def emotion_profiles() -> dict:
+    """Per-brand emotion profiles + tag rules (for the Voice Direction UI). No credits."""
+    return emotion.profiles()
+
+
 @app.post("/draft", response_model=DraftResponse, dependencies=[Depends(require_key)])
 def draft(req: DraftRequest) -> DraftResponse:
     if not settings.llm_ready:
@@ -74,7 +80,9 @@ def direct(req: DirectRequest) -> DirectResponse:
     if not settings.llm_ready:
         raise HTTPException(503, "LLM not configured (set ANTHROPIC_API_KEY)")
     try:
-        result = emotion.direct(req.script, req.brand, req.persona, req.intensity)
+        result = emotion.direct(
+            req.script, req.brand, req.persona, req.intensity, req.stability_mode
+        )
     except Exception as exc:
         raise HTTPException(502, f"Emotion Director error: {exc}") from exc
     return DirectResponse(**result)

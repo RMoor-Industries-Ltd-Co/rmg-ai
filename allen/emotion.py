@@ -50,8 +50,42 @@ EMOTION_PROFILES: dict[str, dict[str, str]] = {
 
 STABILITY_VALUE = {"creative": 0.0, "natural": 0.5, "robust": 1.0}
 
+# Human-facing brand labels for the Voice Direction UI.
+BRAND_LABELS = {
+    "com": "COM — Conversations of Mastery",
+    "vlog": "VLOG — Virtual Legacy of Greatness",
+    "mstr-rahm": "MSTR_RAHM — Master Rahm",
+    "busy-mf": "BU$Y_MF — Business Monday–Friday",
+    "orr": "ORR / R+R — Our Royal Reservations",
+    "trc": "TRC — The Rahm Council",
+}
 
-def direct(script: str, brand: str, persona: Optional[str], intensity: Optional[str]) -> dict:
+
+def profiles() -> dict:
+    """Serializable emotion profiles + tag rules for the Voice Direction UI."""
+    out = []
+    for key, prof in EMOTION_PROFILES.items():
+        out.append(
+            {
+                "brand": key,
+                "label": BRAND_LABELS.get(key, key),
+                "tags": prof["tags"],
+                "emphasis": prof["emphasis"],
+                "pacing": prof["pacing"],
+                "stability_mode": prof["stability"],
+                "stability": STABILITY_VALUE.get(prof["stability"], 0.5),
+            }
+        )
+    return {"profiles": out, "stability_values": STABILITY_VALUE}
+
+
+def direct(
+    script: str,
+    brand: str,
+    persona: Optional[str],
+    intensity: Optional[str],
+    stability_mode: Optional[str] = None,
+) -> dict:
     prof = EMOTION_PROFILES.get((brand or "").lower(), EMOTION_PROFILES["com"])
     b = _PRESETS["brands"].get((brand or "").lower(), {})
     brand_tone = b.get("tone_rules", "")
@@ -70,7 +104,10 @@ def direct(script: str, brand: str, persona: Optional[str], intensity: Optional[
         + "Return ONLY the annotated script text — no commentary, no labels."
     )
     tagged = get_llm().complete(system=system, user=f"Script:\n{script}", max_tokens=1500)
-    mode = prof["stability"]
+    # Brand recommends a stability mode; the director (UI) may override it.
+    mode = (stability_mode or prof["stability"]).lower()
+    if mode not in STABILITY_VALUE:
+        mode = prof["stability"]
     return {
         "tagged_script": tagged,
         "stability_mode": mode,
