@@ -16,3 +16,6 @@ venv/
 # OS / editor
 .DS_Store
 .vscode/
+
+# brand prompt config (not a secret)
+!allen/presets.json
