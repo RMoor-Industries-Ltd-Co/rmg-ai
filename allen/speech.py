@@ -6,14 +6,23 @@ import requests
 from .config import settings
 
 
-def synthesize(text: str, voice_id: str | None = None) -> bytes:
-    """Text -> spoken audio (mp3) in ALLEN's voice (default: COM Coach Rahm)."""
+def synthesize(
+    text: str,
+    voice_id: str | None = None,
+    model_id: str | None = None,
+    stability: float | None = None,
+) -> bytes:
+    """Text -> spoken audio (mp3). Pass model_id='eleven_v3' for audio-tag emotion,
+    and a stability (0.0 Creative / 0.5 Natural / 1.0 Robust)."""
     vid = voice_id or settings.allen_voice_id
+    body: dict = {"text": text, "model_id": model_id or "eleven_multilingual_v2"}
+    if stability is not None:
+        body["voice_settings"] = {"stability": stability}
     resp = requests.post(
         f"https://api.elevenlabs.io/v1/text-to-speech/{vid}",
         headers={"xi-api-key": settings.elevenlabs_api_key, "Content-Type": "application/json"},
-        json={"text": text, "model_id": "eleven_multilingual_v2"},
-        timeout=120,
+        json=body,
+        timeout=180,
     )
     resp.raise_for_status()
     return resp.content

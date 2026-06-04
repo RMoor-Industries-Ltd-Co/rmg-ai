@@ -25,9 +25,25 @@ class DraftResponse(BaseModel):
     model: str
 
 
+class DirectRequest(BaseModel):
+    script: str
+    brand: str
+    persona: Optional[str] = None
+    intensity: Optional[str] = None
+
+
+class DirectResponse(BaseModel):
+    tagged_script: str
+    stability_mode: str
+    stability: float
+    audio_tag_palette: str
+
+
 class SpeakRequest(BaseModel):
     text: str
     voice_id: Optional[str] = None
+    model_id: Optional[str] = None  # e.g. "eleven_v3" for audio tags
+    stability: Optional[float] = None
 
 
 class HealthResponse(BaseModel):

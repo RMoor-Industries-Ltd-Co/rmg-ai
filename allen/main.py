@@ -1,9 +1,16 @@
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.responses import Response
 
-from . import brands, docs, scripts, speech
+from . import brands, docs, emotion, scripts, speech
 from .config import settings
-from .models import DraftRequest, DraftResponse, HealthResponse, SpeakRequest
+from .models import (
+    DirectRequest,
+    DirectResponse,
+    DraftRequest,
+    DraftResponse,
+    HealthResponse,
+    SpeakRequest,
+)
 
 app = FastAPI(title="ALLEN", version="0.1.0")
 
@@ -60,12 +67,25 @@ def draft(req: DraftRequest) -> DraftResponse:
     )
 
 
+@app.post("/direct", response_model=DirectResponse, dependencies=[Depends(require_key)])
+def direct(req: DirectRequest) -> DirectResponse:
+    """Emotion Director: annotate an approved script with v3 audio tags + emphasis +
+    pauses, and recommend a stability mode, in the brand's emotional register."""
+    if not settings.llm_ready:
+        raise HTTPException(503, "LLM not configured (set ANTHROPIC_API_KEY)")
+    try:
+        result = emotion.direct(req.script, req.brand, req.persona, req.intensity)
+    except Exception as exc:
+        raise HTTPException(502, f"Emotion Director error: {exc}") from exc
+    return DirectResponse(**result)
+
+
 @app.post("/speak", dependencies=[Depends(require_key)])
 def speak(req: SpeakRequest) -> Response:
     if not settings.tts_ready:
         raise HTTPException(503, "TTS not configured (set ELEVENLABS_API_KEY)")
     try:
-        audio = speech.synthesize(req.text, req.voice_id)
+        audio = speech.synthesize(req.text, req.voice_id, req.model_id, req.stability)
     except Exception as exc:
         raise HTTPException(502, f"TTS error: {exc}") from exc
     return Response(content=audio, media_type="audio/mpeg")
