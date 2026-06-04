@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.responses import Response
 
 from . import brands, docs, scripts, speech
@@ -6,6 +6,12 @@ from .config import settings
 from .models import DraftRequest, DraftResponse, HealthResponse, SpeakRequest
 
 app = FastAPI(title="ALLEN", version="0.1.0")
+
+
+def require_key(x_allen_key: str | None = Header(default=None)) -> None:
+    """Guard credit-consuming endpoints. Open if ALLEN_API_KEY is unset."""
+    if settings.allen_api_key and x_allen_key != settings.allen_api_key:
+        raise HTTPException(401, "invalid or missing x-allen-key")
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -24,7 +30,7 @@ def get_brands() -> list[dict[str, str]]:
     return brands.list_brands()
 
 
-@app.post("/draft", response_model=DraftResponse)
+@app.post("/draft", response_model=DraftResponse, dependencies=[Depends(require_key)])
 def draft(req: DraftRequest) -> DraftResponse:
     if not settings.llm_ready:
         raise HTTPException(503, "LLM not configured (set ANTHROPIC_API_KEY)")
@@ -54,7 +60,7 @@ def draft(req: DraftRequest) -> DraftResponse:
     )
 
 
-@app.post("/speak")
+@app.post("/speak", dependencies=[Depends(require_key)])
 def speak(req: SpeakRequest) -> Response:
     if not settings.tts_ready:
         raise HTTPException(503, "TTS not configured (set ELEVENLABS_API_KEY)")
@@ -65,7 +71,7 @@ def speak(req: SpeakRequest) -> Response:
     return Response(content=audio, media_type="audio/mpeg")
 
 
-@app.post("/listen")
+@app.post("/listen", dependencies=[Depends(require_key)])
 async def listen(file: UploadFile = File(...)) -> dict[str, str]:
     if not settings.stt_ready:
         raise HTTPException(503, "STT not configured (set OPENAI_API_KEY)")
