@@ -40,6 +40,22 @@ class DirectResponse(BaseModel):
     audio_tag_palette: str
 
 
+class MetadataRequest(BaseModel):
+    brand: str
+    platform: str
+    topic: str = ""
+    persona: Optional[str] = None
+    script: Optional[str] = None
+
+
+class MetadataResponse(BaseModel):
+    title: str = ""
+    caption: str = ""
+    hashtags: list[str] = []
+    first_comment: str = ""
+    audience: str = ""
+
+
 class SpeakRequest(BaseModel):
     text: str
     voice_id: Optional[str] = None

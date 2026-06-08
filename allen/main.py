@@ -1,7 +1,7 @@
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.responses import Response
 
-from . import brands, docs, emotion, scripts, speech
+from . import brands, docs, emotion, metadata, scripts, speech
 from .config import settings
 from .models import (
     DirectRequest,
@@ -9,6 +9,8 @@ from .models import (
     DraftRequest,
     DraftResponse,
     HealthResponse,
+    MetadataRequest,
+    MetadataResponse,
     SpeakRequest,
 )
 
@@ -86,6 +88,18 @@ def direct(req: DirectRequest) -> DirectResponse:
     except Exception as exc:
         raise HTTPException(502, f"Emotion Director error: {exc}") from exc
     return DirectResponse(**result)
+
+
+@app.post("/metadata", response_model=MetadataResponse, dependencies=[Depends(require_key)])
+def post_metadata(req: MetadataRequest) -> MetadataResponse:
+    """ALLIE v1: suggested post metadata (caption, hashtags, first comment, audience, title)."""
+    if not settings.llm_ready:
+        raise HTTPException(503, "LLM not configured (set ANTHROPIC_API_KEY)")
+    try:
+        result = metadata.suggest(req.brand, req.persona, req.topic, req.script, req.platform)
+    except Exception as exc:
+        raise HTTPException(502, f"metadata error: {exc}") from exc
+    return MetadataResponse(**result)
 
 
 @app.post("/speak", dependencies=[Depends(require_key)])
