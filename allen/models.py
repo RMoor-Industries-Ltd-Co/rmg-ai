@@ -40,6 +40,22 @@ class DirectResponse(BaseModel):
     audio_tag_palette: str
 
 
+class TopicsRequest(BaseModel):
+    brand: str
+    count: int = 6
+    context: Optional[str] = None
+
+
+class TopicSuggestion(BaseModel):
+    title: str
+    hook: str = ""
+    angle: str = ""
+
+
+class TopicsResponse(BaseModel):
+    topics: list[TopicSuggestion] = []
+
+
 class MetadataRequest(BaseModel):
     brand: str
     platform: str

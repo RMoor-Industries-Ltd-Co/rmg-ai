@@ -1,7 +1,7 @@
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.responses import Response
 
-from . import brands, docs, emotion, metadata, scripts, speech
+from . import brands, docs, emotion, metadata, scripts, speech, topics
 from .config import settings
 from .models import (
     DirectRequest,
@@ -12,6 +12,8 @@ from .models import (
     MetadataRequest,
     MetadataResponse,
     SpeakRequest,
+    TopicsRequest,
+    TopicsResponse,
 )
 
 app = FastAPI(title="ALLEN", version="0.1.0")
@@ -88,6 +90,18 @@ def direct(req: DirectRequest) -> DirectResponse:
     except Exception as exc:
         raise HTTPException(502, f"Emotion Director error: {exc}") from exc
     return DirectResponse(**result)
+
+
+@app.post("/topics", response_model=TopicsResponse, dependencies=[Depends(require_key)])
+def post_topics(req: TopicsRequest) -> TopicsResponse:
+    """ALLIE: suggested next topics per brand (grounded in brand voice; context-aware)."""
+    if not settings.llm_ready:
+        raise HTTPException(503, "LLM not configured (set ANTHROPIC_API_KEY)")
+    try:
+        items = topics.suggest(req.brand, req.count, req.context)
+    except Exception as exc:
+        raise HTTPException(502, f"topics error: {exc}") from exc
+    return TopicsResponse(topics=items)
 
 
 @app.post("/metadata", response_model=MetadataResponse, dependencies=[Depends(require_key)])
