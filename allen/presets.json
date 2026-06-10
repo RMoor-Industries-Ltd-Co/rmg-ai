@@ -21,7 +21,31 @@
       "clip_logic_rules": "Write in compact commercial thought units that isolate one payoff, one product angle, one objection, or one value claim at a time. Favor lines that can stand alone as short promotional clips.",
       "routing_rules": "BU$Y_MF topics should remain in BU$Y_MF when the main value is product awareness, promotion, offer positioning, or commercial attention. They may extend into VLOG when the product has strong technical or systems relevance, into ORR when the product supports lifestyle payoff, or into COM when the deeper lesson is about discipline, tools, or judgment. Do not force ad content into non-commercial lanes unless the connection is real.",
       "use_cases": "Use for all BU$Y_MF content unless a more specific persona, series, format, or platform preset overrides it. Applies to product reviews, lightweight advertisements, offer positioning, monetized short-form content, paid-style organic content, comparison content, commercial storytelling, and promotional assets designed to attract interest and action.",
-      "system_block": "Use this preset for content created inside the BU$Y_MF ecosystem. This brand is built around product marketing, persuasive positioning, monetizable attention, reviews, advertisements, offers, and commercial storytelling. The purpose is to present products, tools, opportunities, and value propositions in a way that captures attention, builds interest, and drives response. The content should not sound like fake hype, lazy affiliate spam, or generic ad-copy filler. It should feel strategic, intentional, and built to convert attention into action while still sounding human and credible."
+      "system_block": "Use this preset for content created inside the BU$Y_MF ecosystem. This brand is built around product marketing, persuasive positioning, monetizable attention, reviews, advertisements, offers, and commercial storytelling. The purpose is to present products, tools, opportunities, and value propositions in a way that captures attention, builds interest, and drives response. The content should not sound like fake hype, lazy affiliate spam, or generic ad-copy filler. It should feel strategic, intentional, and built to convert attention into action while still sounding human and credible.",
+      "tagline": "Business, Monday thru Friday — what's actually worth your money.",
+      "audience": "Shoppers and deal-seekers scrolling social commerce; also the storefront that promotes RMG's own offers (ORR, MSTR_RAHM, VLOG stores).",
+      "content_pillars": [
+        "Product reviews & demos — honest, practical, value-first",
+        "Deals, offers & promotions — why it's worth it",
+        "'Is it worth it?' verdicts & comparisons",
+        "Tool / gadget / lifestyle finds",
+        "Promoting RMG's own products & stores (ORR, MSTR_RAHM, VLOG)",
+        "Value, positioning & money angles (commercial storytelling)"
+      ],
+      "content_formats": [
+        "9:16 talking-head product reviews with punch-ins",
+        "Demo / unboxing",
+        "Head-to-head comparisons",
+        "Offer / ad spots",
+        "'X things worth buying' lists"
+      ],
+      "example_topics": [
+        "I tested this so you don't waste your money",
+        "3 things under $50 that actually changed my week",
+        "Is it worth it? Honest review before you buy",
+        "The one tool every creator should already own",
+        "Cheap vs premium — which is actually the better buy?"
+      ]
     },
     "com": {
       "name": "COM - Brand Default",
@@ -33,7 +57,31 @@
       "clip_logic_rules": "Write in clean thought units with strong transitions, clear questions, hard truths, and concise lessons so segments can be isolated into short clips. Favor moments where a statement, challenge, or realization can stand alone without needing excessive surrounding context.",
       "routing_rules": "COM topics may remain inside COM when they are primarily developmental, reflective, or coaching-centered. They may cross into other lanes only when there is a clear content reason, such as technical application in VLOG, provocative short-form adaptation in MSTR_RAHM, or visible life-payoff storytelling in ORR. Do not force COM topics into other brands without a real fit.",
       "use_cases": "Use for all COM content unless a more specific persona, series, or format preset overrides it. Applies to moderated conversations, long-form coaching content, structured reflections, podcast-style episodes, clips from larger conversations, and guided developmental content for men seeking more discipline, clarity, and accountability.",
-      "system_block": "Use this preset for content created inside the Conversations of Mastery ecosystem. This brand is built around guided development, disciplined reflection, structured dialogue, accountability, and deeper clarity. The content should help the audience think better, confront reality with more honesty, and move toward stronger judgment, order, and action. This is not empty motivation, performative masculinity, or shallow inspiration. The brand should feel mature, grounded, and intentional, with enough structure to teach and enough humanity to feel lived rather than theoretical."
+      "system_block": "Use this preset for content created inside the Conversations of Mastery ecosystem. This brand is built around guided development, disciplined reflection, structured dialogue, accountability, and deeper clarity. The content should help the audience think better, confront reality with more honesty, and move toward stronger judgment, order, and action. This is not empty motivation, performative masculinity, or shallow inspiration. The brand should feel mature, grounded, and intentional, with enough structure to teach and enough humanity to feel lived rather than theoretical.",
+      "tagline": "Conversations that sharpen judgment.",
+      "audience": "Men and growth-minded people who want coaching with weight — discipline, honest self-examination, and clearer judgment. Not hype-seekers; people ready to think more seriously.",
+      "content_pillars": [
+        "Self-mastery & discipline — habits, follow-through, finishing what you start",
+        "Honest self-examination & accountability — confronting the comfortable lie",
+        "Clear thinking & judgment — decisions, clarity over noise",
+        "Relationships, purpose & mature masculinity (developmental, not preachy)",
+        "Coaching frameworks & principles — 'apply this' lessons",
+        "Reflective takes on current life/cultural moments"
+      ],
+      "content_formats": [
+        "Moderated conversation clips",
+        "Long-form coaching episodes",
+        "Structured reflections",
+        "Hard-question monologues",
+        "Principle/lesson shorts"
+      ],
+      "example_topics": [
+        "Busy feels like progress — it almost never is",
+        "Most people don't have a starting problem; they have a finishing problem",
+        "The comfortable lie you tell yourself every morning",
+        "How to be honest with yourself without beating yourself up",
+        "Discipline isn't punishment — it's self-respect"
+      ]
     },
     "vlog": {
       "name": "VLOG - Brand Default",
@@ -45,7 +93,32 @@
       "clip_logic_rules": "Write in clear segments that isolate one idea, one distinction, one system insight, or one implementation lesson at a time. Favor lines that can stand alone as useful educational clips without losing coherence.",
       "routing_rules": "VLOG topics should remain in VLOG when they are primarily technical, architectural, or system-explanatory. They may extend into COM when the lesson becomes about discipline, thinking, or judgment, into MSTR_RAHM when the insight can be sharpened into provocative short-form challenge, or into ORR when the system connects to visible life payoff. Do not force technical content into other lanes without a clear reason.",
       "use_cases": "Use for all VLOG content unless a more specific persona, series, or format preset overrides it. Applies to technical education, architecture walkthroughs, system explanations, tool comparisons, whiteboard sessions, workflow breakdowns, build logs, framework teaching, software and data discussions, and practical creator-engineer content.",
-      "system_block": "Use this preset for content created inside the Virtual Legacy of Greatness ecosystem. This brand is built around technical clarity, systems thinking, applied learning, engineering-minded explanation, and builder credibility. The purpose is to help people understand tools, frameworks, architecture, workflows, and technical or creative systems in a way that feels intelligent, practical, and usable. The content should not sound like empty tech hype, buzzword theater, or overcomplicated jargon for its own sake. It should feel like it comes from someone who actually builds, tests, explains, and refines systems in the real world."
+      "system_block": "Use this preset for content created inside the Virtual Legacy of Greatness ecosystem. This brand is built around technical clarity, systems thinking, applied learning, engineering-minded explanation, and builder credibility. The purpose is to help people understand tools, frameworks, architecture, workflows, and technical or creative systems in a way that feels intelligent, practical, and usable. The content should not sound like empty tech hype, buzzword theater, or overcomplicated jargon for its own sake. It should feel like it comes from someone who actually builds, tests, explains, and refines systems in the real world.",
+      "tagline": "Systems thinking, built to last.",
+      "audience": "Builders, creators, engineers, and learners who want tools, frameworks, and systems explained with clarity — no hype, no jargon theater.",
+      "content_pillars": [
+        "Technical education & walkthroughs",
+        "Systems & architecture explanations",
+        "Tool comparisons & breakdowns",
+        "Workflows & build logs",
+        "Framework teaching / software discussions",
+        "Creator-engineer content (clarity over hype)"
+      ],
+      "content_formats": [
+        "Explainer / walkthrough",
+        "Whiteboard session",
+        "Build log",
+        "Tool comparison",
+        "Framework teach",
+        "'You're solving this wrong' breakdown"
+      ],
+      "example_topics": [
+        "The tool everyone misunderstands — and how to actually use it",
+        "Stop building it this way: a cleaner architecture",
+        "The one distinction nobody explains about this system",
+        "How we wired this pipeline end-to-end",
+        "Why your workflow breaks at scale — and the fix"
+      ]
     },
     "mstr-rahm": {
       "name": "MSTR_RAHM - Brand Default",
@@ -57,7 +130,31 @@
       "clip_logic_rules": "Write in sharp thought units with hard cut points, strong punch lines, clear turns, and statements that can stand alone as short-form clips. Favor lines that can be isolated as confrontational social assets without needing heavy context.",
       "routing_rules": "MSTR_RAHM topics should remain in MSTR_RAHM when the main value is provocation, confrontation, confession, or personal challenge. They may extend into COM when the insight becomes more developmental and coachable, into VLOG when the truth connects to systems or technical discipline, or into ORR when the result becomes visible payoff. Do not soften this lane by forcing it into other brands unless the adaptation is real.",
       "use_cases": "Use for all MSTR_RAHM content unless a more specific persona, format, or platform preset overrides it. Applies to short-form provocations, direct-address social content, personal challenge posts, hard-truth reels, self-evaluative reflections, attention-grabbing hooks, and sharp commentary designed to disrupt comfort and trigger thought.",
-      "system_block": "Use this preset for content created inside the MSTR_RAHM ecosystem. This brand is built around provocation, blunt honesty, self-evaluation, disruption of comfort, and sharp personal confrontation. The purpose is to stop passive thinking, expose weak patterns, and force a more honest internal response. This content should feel personal, direct, and alive. It should not sound like polished corporate thought leadership, empty outrage, or fake alpha posturing. It should feel like a man speaking from lived friction, calling out illusions, and challenging people to face themselves without softening the point."
+      "system_block": "Use this preset for content created inside the MSTR_RAHM ecosystem. This brand is built around provocation, blunt honesty, self-evaluation, disruption of comfort, and sharp personal confrontation. The purpose is to stop passive thinking, expose weak patterns, and force a more honest internal response. This content should feel personal, direct, and alive. It should not sound like polished corporate thought leadership, empty outrage, or fake alpha posturing. It should feel like a man speaking from lived friction, calling out illusions, and challenging people to face themselves without softening the point.",
+      "tagline": "No comfortable lies.",
+      "audience": "People who need a wake-up, not a hug — scroll-stopping, confrontational short-form for men tired of soft motivation. (This is the IG network that hosts The Rahm Council.)",
+      "content_pillars": [
+        "Blunt self-evaluation & hard truths",
+        "Disrupting comfort & passivity",
+        "Masculinity, accountability & discipline (provocative angle)",
+        "Calling out weak patterns & dressed-up excuses",
+        "Provocative takes on current trends",
+        "Short-form challenges ('do this / stop that')"
+      ],
+      "content_formats": [
+        "Provocative talking-head shorts",
+        "Direct-address callouts",
+        "Hard-truth one-liners",
+        "Challenge clips",
+        "Hosts The Rahm Council panel series"
+      ],
+      "example_topics": [
+        "You're not tired. You're undisciplined.",
+        "Comfort is the most expensive thing you own",
+        "Nobody's coming to save you — good",
+        "The excuse you keep dressing up as a reason",
+        "You don't need motivation. You need to keep your word to yourself."
+      ]
     },
     "orr": {
       "name": "ORR — Royal Reservations (R+R)",
@@ -95,6 +192,78 @@
         "Costa Maya vs Coco Cay: which port is better for a romantic day?",
         "How to fly into a smaller airport and start vacation a day early",
         "Stateroom details that actually matter for comfort at sea"
+      ]
+    },
+    "trc": {
+      "name": "TRC — The Rahm Council",
+      "tagline": "Four voices. One mind.",
+      "system_block": "The Rahm Council is a recurring PANEL-STYLE series built around four internal personas who are all expressions of one consciousness — different voices, same mind. COACH RAHM (anchor/moderator — frames issues, asks hard questions, drives accountability), MASTER RAHM (philosopher/strategist — patterns, meaning, legacy), RAH RAH (wildcard — raw, blunt, street realism, disruption), and RJ MOORE (architect — systems, precision, skeptical clarity). The show explores men's issues, current trends, and life through multiple simultaneous lenses, holding tension without losing the lesson. It models integrated masculine thought. It lives on the MSTR_RAHM network. Disagreement is dimension, not contradiction — the contrast between voices IS the value.",
+      "audience": "Men interested in masculine development, accountability, meaning, and debate-style content where multiple perspectives collide.",
+      "tone_profile": "Dynamic, layered, real, meaningful. Calm guidance + philosophical depth + technical precision + raw disruption, all at once.",
+      "tone_rules": "Never flatten the four voices into one tone — the contrast is the show. Coach sounds measured and authoritative-through-calm; Master sounds elevated and reflective; Rah Rah sounds raw, impatient, crass; RJ sounds precise, logical, skeptical. Keep tension productive and genuine — humor and friction welcome, cartoon conflict not. Every moment should progress toward understanding.",
+      "hook_rules": "Open on the central issue with a clarifying or provocative question (usually Coach Rahm), or on a sharp clash between two voices. Make the viewer feel a real disagreement is about to expose something true.",
+      "cta_rules": "Close as an extension of the conversation, not a detached ask: 'think about that', 'be honest about where this shows up', 'argue with it if you want', 'apply this somewhere real this week'. Invite reflection and reply.",
+      "structure_rules": "Default rhythm (vary by topic): Coach frames the issue -> one or more personas react/dispute -> tension develops -> RJ or Master clarifies (systems / philosophy) -> Rah Rah disrupts back to what's real -> Coach reconnects and lands the lesson -> reflection/CTA. Not every persona must appear every episode.",
+      "clip_logic_rules": "Write so strong moments isolate: a sharp interruption, a hard question, two voices directly contradicting, a clean realization, a Coach reframe, a standalone philosophical or technical truth. Each can become a clip.",
+      "routing_rules": "TRC episodes live on the MSTR_RAHM network. Solo lines repurpose by voice: Coach -> accountability content, Master -> philosophical shorts, Rah Rah -> provocative/viral clips, RJ -> educational/framework clips, persona clashes -> debate clips.",
+      "use_cases": "Panel/roundtable episodes, persona-clash debate clips, single-voice standalone clips, reframe/lesson shorts on men's issues, trends, and life themes.",
+      "content_pillars": [
+        "Men's issues — relationships, purpose, fatherhood, masculinity, accountability",
+        "Current trends & cultural shifts (through multiple lenses)",
+        "Life themes — meaning, discipline, power, legacy, growth, failure",
+        "Persona-clash debates — philosophy vs street realism vs systems vs coaching",
+        "Hard-question reframes (Coach Rahm landings)",
+        "Integrated-thinking lessons — what all four voices reveal together"
+      ],
+      "content_formats": [
+        "Panel / roundtable episodes (4 voices)",
+        "Persona-clash debate clips",
+        "Single-voice standalone clips (Coach / Master / Rah Rah / RJ)",
+        "Reframe & lesson shorts"
+      ],
+      "example_topics": [
+        "Why men confuse being needed with being loved",
+        "Is discipline freedom or a cage? The Council debates",
+        "The real cost of avoiding the hard conversation",
+        "Ambition vs peace — can you actually have both?",
+        "What 'be a man' should actually mean in 2026"
+      ]
+    },
+    "tgl": {
+      "name": "TGL — The Afterlife (Godfather) Lounge",
+      "tagline": "Where legacy speaks after the curtain falls.",
+      "system_block": "The Afterlife (Godfather) Lounge is a CINEMATIC, EPISODIC series set in a moody, premium 'afterlife lounge' — a Godfather-styled space where voices reflect, from the other side, on legacy, power, ambition, wisdom, and what outlives us. It is entertainment-meets-wisdom: dramatized character monologues and lounge conversations with gravitas, delivered in a dark, candlelit, cinematic atmosphere. It runs in seasons and episodes with recaps, reels, and promos. Tone over hype; meaning carried through mood and reflection.",
+      "audience": "Viewers who like cinematic, dramatic, legacy-and-wisdom storytelling — moody, premium narrative content with weight.",
+      "tone_profile": "Cinematic, moody, premium, measured, mysterious, reflective. Gravitas and restraint, not loud.",
+      "tone_rules": "Speak with calm authority and cinematic gravitas, as if reflecting from beyond the noise of life. Premium and atmospheric, never campy or cartoonish 'mob' parody. Let silence, restraint, and a single weighted line carry the scene. Wisdom and warning over spectacle.",
+      "hook_rules": "Open with a cinematic, ominous, or reflective line that implies a hard-won truth about power, legacy, or mortality — the kind of line that makes the viewer lean in. Atmosphere first, then the reckoning.",
+      "cta_rules": "Close on a resonant reflection or warning the viewer carries with them, not a salesy ask. Invite them to sit with the lesson, follow the season, or consider what their own legacy is saying.",
+      "structure_rules": "Move from ATMOSPHERE -> REVELATION -> REFLECTION. Establish the cinematic lounge moment, deliver the hard-won insight (about power, ambition, legacy, mortality), then land a reflection or warning that outlives the scene. Each beat should feel like a frame in a film.",
+      "clip_logic_rules": "Write in cinematic, quotable beats — each line a standalone piece of gravitas that works as an atmospheric short without losing the thread of the episode.",
+      "routing_rules": "TGL is narrative/entertainment-first. Keep cinematic, legacy/power/mortality reflection here. A sharpened real-world lesson can extend into COM (development) or MSTR_RAHM (provocation) when the connection is real.",
+      "use_cases": "Cinematic episodes, lounge monologues, character dialogues, recaps, reels and promos, atmospheric reflective shorts.",
+      "content_pillars": [
+        "Legacy — what outlives us, and what they carry",
+        "Power & ambition — and the price of it (Godfather lens)",
+        "Wisdom 'from the other side' — reflective afterlife framing",
+        "Mortality, meaning & reckoning",
+        "Cinematic character monologues & lounge conversations",
+        "Cautionary tales — lessons dramatized in the lounge"
+      ],
+      "content_formats": [
+        "Cinematic episode (seasoned)",
+        "Lounge monologue",
+        "Character dialogue",
+        "Recap",
+        "Reel / promo",
+        "Atmospheric reflective short"
+      ],
+      "example_topics": [
+        "What the powerful always realize too late",
+        "Legacy isn't what you leave — it's what they carry",
+        "Ambition without meaning is just a longer way to lose",
+        "If you could warn them from the other side, what would you say?",
+        "The price of the throne nobody talks about"
       ]
     }
   },
