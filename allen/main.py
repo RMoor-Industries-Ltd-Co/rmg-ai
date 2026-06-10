@@ -1,9 +1,11 @@
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.responses import Response
 
-from . import brands, docs, emotion, metadata, scripts, speech, topics
+from . import brands, chat, docs, emotion, metadata, scripts, speech, topics
 from .config import settings
 from .models import (
+    ChatRequest,
+    ChatResponse,
     DirectRequest,
     DirectResponse,
     DraftRequest,
@@ -90,6 +92,24 @@ def direct(req: DirectRequest) -> DirectResponse:
     except Exception as exc:
         raise HTTPException(502, f"Emotion Director error: {exc}") from exc
     return DirectResponse(**result)
+
+
+@app.post("/chat", response_model=ChatResponse, dependencies=[Depends(require_key)])
+def post_chat(req: ChatRequest) -> ChatResponse:
+    """Talk to ALLEN. Reply is written to be spoken aloud (pair with /speak)."""
+    if not settings.llm_ready:
+        raise HTTPException(503, "LLM not configured (set ANTHROPIC_API_KEY)")
+    try:
+        reply = chat.respond(
+            req.message,
+            req.brand,
+            req.persona,
+            [m.model_dump() for m in req.history],
+            req.max_tokens,
+        )
+    except Exception as exc:
+        raise HTTPException(502, f"chat error: {exc}") from exc
+    return ChatResponse(reply=reply)
 
 
 @app.post("/topics", response_model=TopicsResponse, dependencies=[Depends(require_key)])

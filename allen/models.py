@@ -40,6 +40,23 @@ class DirectResponse(BaseModel):
     audio_tag_palette: str
 
 
+class ChatMessage(BaseModel):
+    role: str  # "user" | "assistant"
+    content: str
+
+
+class ChatRequest(BaseModel):
+    message: str
+    brand: Optional[str] = None
+    persona: Optional[str] = None
+    history: list[ChatMessage] = []
+    max_tokens: int = 600
+
+
+class ChatResponse(BaseModel):
+    reply: str
+
+
 class TopicsRequest(BaseModel):
     brand: str
     count: int = 6
