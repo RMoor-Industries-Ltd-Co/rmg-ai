@@ -50,6 +50,7 @@ class ChatRequest(BaseModel):
     brand: Optional[str] = None
     persona: Optional[str] = None
     history: list[ChatMessage] = []
+    context: Optional[str] = None  # concierge context: system state, recent work, memories
     max_tokens: int = 600
 
 

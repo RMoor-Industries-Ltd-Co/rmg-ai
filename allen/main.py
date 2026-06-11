@@ -106,6 +106,7 @@ def post_chat(req: ChatRequest) -> ChatResponse:
             req.persona,
             [m.model_dump() for m in req.history],
             req.max_tokens,
+            req.context,
         )
     except Exception as exc:
         raise HTTPException(502, f"chat error: {exc}") from exc
