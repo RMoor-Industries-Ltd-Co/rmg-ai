@@ -40,6 +40,17 @@ class DirectResponse(BaseModel):
     audio_tag_palette: str
 
 
+class MeetingRequest(BaseModel):
+    transcript: str
+    brand: Optional[str] = None
+
+
+class MeetingResponse(BaseModel):
+    summary: str = ""
+    action_items: list[str] = []
+    highlights: list[str] = []
+
+
 class ChatMessage(BaseModel):
     role: str  # "user" | "assistant"
     content: str

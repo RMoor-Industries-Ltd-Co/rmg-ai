@@ -1,7 +1,7 @@
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.responses import Response
 
-from . import brands, chat, docs, emotion, metadata, scripts, speech, topics
+from . import brands, chat, docs, emotion, meeting, metadata, scripts, speech, topics
 from .config import settings
 from .models import (
     ChatRequest,
@@ -11,6 +11,8 @@ from .models import (
     DraftRequest,
     DraftResponse,
     HealthResponse,
+    MeetingRequest,
+    MeetingResponse,
     MetadataRequest,
     MetadataResponse,
     SpeakRequest,
@@ -92,6 +94,18 @@ def direct(req: DirectRequest) -> DirectResponse:
     except Exception as exc:
         raise HTTPException(502, f"Emotion Director error: {exc}") from exc
     return DirectResponse(**result)
+
+
+@app.post("/meeting", response_model=MeetingResponse, dependencies=[Depends(require_key)])
+def post_meeting(req: MeetingRequest) -> MeetingResponse:
+    """ALLEN Transcriber: distill a transcript into summary + action items + highlights."""
+    if not settings.llm_ready:
+        raise HTTPException(503, "LLM not configured (set ANTHROPIC_API_KEY)")
+    try:
+        result = meeting.summarize(req.transcript, req.brand)
+    except Exception as exc:
+        raise HTTPException(502, f"meeting error: {exc}") from exc
+    return MeetingResponse(**result)
 
 
 @app.post("/chat", response_model=ChatResponse, dependencies=[Depends(require_key)])
