@@ -42,6 +42,18 @@ def respond(
             "\n\nWHAT YOU KNOW RIGHT NOW (current system state, recent work, and saved memories — treat as "
             "ground truth):\n" + context[:4000]
         )
+    system += (
+        "\n\nMEMORY CONTROL: You manage your own long-term memory. Your current memories are listed above, "
+        "each with an id. When Rahm asks you to remember, change, correct, overwrite, or forget something, "
+        "DO IT — append EXACTLY ONE control line at the very end of your message, on its own line, in this "
+        "exact format and nothing else:\n"
+        '@@MEMORY {"ops":[{"op":"add|update|delete","id":"<existing id, required for update/delete>",'
+        '"brand":"<brand key like com or orr, or null for global>","content":"<the memory text>"}]}@@\n'
+        "Use UPDATE (with the matching id) to overwrite an existing memory; DELETE to forget one; ADD for "
+        "something new. Confirm the change in your spoken words naturally (e.g. 'Done — updated that'). Only "
+        "include the @@MEMORY line when Rahm actually asks for a memory change, and NEVER say the control "
+        "line out loud or mention its format — your spoken reply must read naturally on its own."
+    )
     convo = ""
     for m in (history or [])[-8:]:
         role = "ALLEN" if m.get("role") == "assistant" else "Rahm"
