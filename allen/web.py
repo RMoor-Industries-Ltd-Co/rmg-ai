@@ -237,6 +237,34 @@ def delete_conversation_ep(cid: str, request: Request) -> dict:
     return {"ok": True}
 
 
+# ---- inspiration (home-screen greeting; rate 0-3 thumbs to weight future appearances) ----
+@router.get("/console/inspiration")
+def inspiration_ep(request: Request) -> dict:
+    user = _session_user(request)
+    if not db.db_ready():
+        return {"id": None, "text": "Make today count.", "rating": 2}
+    return db.random_inspiration(user["namespace"]) or {"id": None, "text": "Make today count.", "rating": 2}
+
+
+@router.post("/console/inspiration/{iid}/rate")
+def rate_inspiration_ep(iid: str, body: dict, request: Request) -> dict:
+    user = _session_user(request)
+    if db.db_ready():
+        db.rate_inspiration(user["namespace"], iid, int((body or {}).get("rating", 0)))
+    return {"ok": True}
+
+
+@router.post("/console/inspiration")
+def add_inspiration_ep(body: dict, request: Request) -> dict:
+    user = _session_user(request)
+    text = ((body or {}).get("text") or "").strip()
+    if not text:
+        raise HTTPException(400, "text required")
+    if not db.db_ready():
+        raise HTTPException(503, "DB not configured")
+    return {"id": db.add_inspiration(user["namespace"], text)}
+
+
 @router.post("/console/speak")
 def console_speak(body: dict, request: Request) -> RawResponse:
     _session_user(request)

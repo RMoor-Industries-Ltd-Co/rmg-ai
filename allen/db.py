@@ -82,6 +82,15 @@ def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS conversations_ns_idx ON conversations (namespace, updated_at DESC);
             CREATE INDEX IF NOT EXISTS messages_conv_idx ON messages (conversation_id, created_at);
+
+            CREATE TABLE IF NOT EXISTS inspirations (
+                id text PRIMARY KEY,
+                namespace text NOT NULL,
+                text text NOT NULL,
+                rating int NOT NULL DEFAULT 2,
+                created_at timestamptz DEFAULT now()
+            );
+            CREATE INDEX IF NOT EXISTS inspirations_ns_idx ON inspirations (namespace);
             """
         )
 
@@ -238,3 +247,67 @@ def rename_conversation(namespace: str, cid: str, title: Optional[str], folder: 
 def delete_conversation(namespace: str, cid: str) -> None:
     with _cursor() as cur:
         cur.execute("DELETE FROM conversations WHERE id = %s AND namespace = %s", (cid, namespace))
+
+
+# ---- inspirations (home-screen greetings, rated 0-3 thumbs; higher rating shows more often) ----
+_SEED_INSPIRATIONS = [
+    "Discipline is the bridge between goals and accomplishment.",
+    "Clarity comes from action, not thought. Start, then see.",
+    "The work you avoid is usually the work that matters most.",
+    "Done beats perfect. Ship it, then make it better.",
+    "Consistency compounds. Show up again today.",
+    "Your standards are your future. Hold the line.",
+    "Comfort is a slow leak. Choose the harder, better thing.",
+    "Build the day before the day builds you.",
+    "Small hinges swing big doors. Do the small thing well.",
+    "The brand is built in the unglamorous reps.",
+    "Rest is part of the work, not a reward for finishing it.",
+    "Make something today your future self will thank you for.",
+    "Protect your mornings — they set the tone for everything.",
+    "Speak less, build more.",
+    "Momentum is a currency. Finish what you start.",
+    "Greatness is just discipline, repeated.",
+    "You are the standard. Act like it.",
+    "Calm is a superpower. Move with intention, not noise.",
+]
+
+
+def seed_inspirations(namespace: str) -> None:
+    with _cursor() as cur:
+        cur.execute("SELECT count(*) AS n FROM inspirations WHERE namespace = %s", (namespace,))
+        if cur.fetchone()["n"]:
+            return
+        for i, t in enumerate(_SEED_INSPIRATIONS):
+            cur.execute(
+                "INSERT INTO inspirations (id, namespace, text, rating) VALUES (%s, %s, %s, 2) "
+                "ON CONFLICT DO NOTHING",
+                (f"insp-seed-{namespace}-{i}", namespace, t),
+            )
+
+
+def random_inspiration(namespace: str) -> Optional[dict]:
+    import random
+
+    seed_inspirations(namespace)
+    with _cursor() as cur:
+        cur.execute("SELECT id, text, rating FROM inspirations WHERE namespace = %s", (namespace,))
+        rows = list(cur.fetchall())
+    if not rows:
+        return None
+    weights = [max(0, r["rating"]) for r in rows]  # 0 thumbs = excluded from the rotation
+    if sum(weights) == 0:
+        weights = [1] * len(rows)
+    return random.choices(rows, weights=weights, k=1)[0]
+
+
+def rate_inspiration(namespace: str, iid: str, rating: int) -> None:
+    rating = max(0, min(3, int(rating)))
+    with _cursor() as cur:
+        cur.execute("UPDATE inspirations SET rating = %s WHERE id = %s AND namespace = %s", (rating, iid, namespace))
+
+
+def add_inspiration(namespace: str, text: str) -> str:
+    iid = f"insp-{int(time.time() * 1000)}-{secrets.randbelow(10000)}"
+    with _cursor() as cur:
+        cur.execute("INSERT INTO inspirations (id, namespace, text, rating) VALUES (%s, %s, %s, 2)", (iid, namespace, text))
+    return iid
