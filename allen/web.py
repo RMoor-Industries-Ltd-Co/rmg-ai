@@ -86,7 +86,8 @@ def auth_google(body: dict, response: Response) -> dict:
     info = r.json()
     if info.get("aud") != settings.google_client_id:
         raise HTTPException(401, "token audience mismatch")
-    if (info.get("email") or "").lower() != settings.auth_allowed_email.lower():
+    allowed = {e.strip().lower() for e in settings.auth_allowed_email.split(",") if e.strip()}
+    if (info.get("email") or "").lower() not in allowed:
         raise HTTPException(403, "that account is not authorized")
     if str(info.get("email_verified")).lower() != "true":
         raise HTTPException(403, "email not verified")
