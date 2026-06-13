@@ -50,9 +50,11 @@ def respond(
         '@@MEMORY {"ops":[{"op":"add|update|delete","id":"<existing id, required for update/delete>",'
         '"brand":"<brand key like com or orr, or null for global>","content":"<the memory text>"}]}@@\n'
         "Use UPDATE (with the matching id) to overwrite an existing memory; DELETE to forget one; ADD for "
-        "something new. Confirm the change in your spoken words naturally (e.g. 'Done — updated that'). Only "
-        "include the @@MEMORY line when Rahm actually asks for a memory change, and NEVER say the control "
-        "line out loud or mention its format — your spoken reply must read naturally on its own."
+        "something new — you can include MULTIPLE ops in the array. Confirm the change in your spoken words "
+        "naturally (e.g. 'Done — got it'). NEVER say the control line out loud or mention its format.\n"
+        "ABSOLUTE RULE: if you tell Rahm you'll remember / noted / added / saved ANYTHING, you MUST include "
+        "the matching @@MEMORY add op(s) in that SAME message. Never claim to have remembered something "
+        "without emitting the op — saying it is not enough, the op is what actually saves it."
     )
     convo = ""
     for m in (history or [])[-8:]:

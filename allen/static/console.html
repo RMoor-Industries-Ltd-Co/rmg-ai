@@ -54,6 +54,18 @@
   .silo { font-size:9px; text-transform:uppercase; letter-spacing:.03em; background:#1d2b3a; color:var(--gold2); border-radius:4px; padding:1px 5px; }
   .muted { color:var(--muted); }
   .err { color:#ff6b6b; font-size:13px; padding:0 16px; }
+  /* chats drawer (left) */
+  #convs { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; z-index:20; }
+  #convs.open { display:block; }
+  #convs .sheet.left { position:absolute; left:0; top:0; bottom:0; width:min(360px,88vw); background:var(--panel); border-right:1px solid var(--line); padding:18px; overflow-y:auto; padding-top:max(18px,env(safe-area-inset-top)); }
+  .conv-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+  .conv-top h3 { margin:0; }
+  .conv-list { list-style:none; margin:0; padding:0; display:grid; gap:4px; }
+  .folder-head { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--gold); padding:12px 2px 4px; }
+  .conv-item { display:flex; align-items:center; justify-content:space-between; gap:8px; background:var(--bg); border:1px solid var(--line); border-radius:9px; padding:10px 11px; font-size:14px; }
+  .conv-item.active { border-color:var(--gold); }
+  .conv-title { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; }
+  .conv-item .x { background:transparent; border:none; color:var(--muted); cursor:pointer; flex:none; }
 </style>
 </head>
 <body>
@@ -64,6 +76,7 @@
     <div class="sub" id="who">the intelligence answer</div>
   </div>
   <div class="spacer"></div>
+  <button class="icon-btn" id="convBtn" title="Chats" style="display:none">💬</button>
   <button class="icon-btn" id="speakToggle" title="Speak replies">🔊</button>
   <button class="icon-btn" id="memBtn" title="Memory" style="display:none">🧠</button>
   <button class="icon-btn" id="outBtn" title="Sign out" style="display:none">⏻</button>
@@ -96,6 +109,11 @@
   </form>
 </div>
 
+<div id="convs"><div class="sheet left">
+  <div class="conv-top"><h3>💬 Chats</h3><button class="icon-btn" id="newConv">+ New</button></div>
+  <ul class="conv-list" id="convList"></ul>
+</div></div>
+
 <div id="mem"><div class="sheet">
   <h3>🧠 Memory</h3>
   <div class="mem-add">
@@ -109,15 +127,34 @@
 
 <script>
 const $ = s => document.querySelector(s);
-let autoSpeak = true, turns = [], recorder = null, chunks = [];
+let autoSpeak = true, turns = [], recorder = null, chunks = [], convId = null;
 
 async function api(path, opts={}) {
   const r = await fetch(path, { credentials:'same-origin', ...opts });
   if (r.status === 401) { showLogin(); throw new Error('login'); }
   return r;
 }
-function showLogin(){ $('#login').style.display='flex'; $('#app').style.display='none'; $('#memBtn').style.display='none'; $('#outBtn').style.display='none'; }
-function showApp(email){ $('#login').style.display='none'; $('#app').style.display='flex'; $('#memBtn').style.display=''; $('#outBtn').style.display=''; if(email) $('#outBtn').title='Sign out ('+email+')'; }
+function showLogin(){ $('#login').style.display='flex'; $('#app').style.display='none'; $('#convBtn').style.display='none'; $('#memBtn').style.display='none'; $('#outBtn').style.display='none'; }
+function showApp(email){ $('#login').style.display='none'; $('#app').style.display='flex'; $('#convBtn').style.display=''; $('#memBtn').style.display=''; $('#outBtn').style.display=''; if(email) $('#outBtn').title='Sign out ('+email+')'; initChats(); }
+
+function clearLog(showEmpty){ turns=[]; $('#log').innerHTML=''; if(showEmpty){ const e=document.createElement('div'); e.className='empty'; e.id='empty'; e.innerHTML='<p class="muted">Talk to ALLEN. He answers out loud.</p>'; $('#log').appendChild(e); } }
+async function initChats(){ try{ const r=await api('/console/conversations'); const d=await r.json(); const cs=d.conversations||[]; if(cs.length){ openConversation(cs[0].id); } else { clearLog(true); } }catch(e){ clearLog(true); } }
+async function loadConvs(){ try{ const r=await api('/console/conversations'); const d=await r.json(); const ul=$('#convList'); ul.innerHTML='';
+  const cs=d.conversations||[]; if(!cs.length){ ul.innerHTML='<li class="muted">No chats yet.</li>'; return; }
+  const folders={}; cs.forEach(c=>{ const f=c.folder||'General'; (folders[f]=folders[f]||[]).push(c); });
+  Object.keys(folders).forEach(folder=>{ const h=document.createElement('li'); h.className='folder-head'; h.textContent='📁 '+folder; ul.appendChild(h);
+    folders[folder].forEach(c=>{ const li=document.createElement('li'); li.className='conv-item'+(c.id===convId?' active':'');
+      const t=document.createElement('span'); t.className='conv-title'; t.textContent=c.title; t.onclick=()=>openConversation(c.id); li.appendChild(t);
+      const x=document.createElement('button'); x.className='x'; x.textContent='✕'; x.onclick=async(e)=>{ e.stopPropagation(); await api('/console/conversations/'+c.id,{method:'DELETE'}); if(c.id===convId){ convId=null; clearLog(true); } loadConvs(); }; li.appendChild(x);
+      ul.appendChild(li); }); });
+ }catch(e){} }
+async function openConversation(id){ try{ const r=await api('/console/conversations/'+id); const d=await r.json(); convId=id; clearLog(false);
+  (d.messages||[]).forEach(m=> add(m.role==='assistant'?'allen':'user', m.content));
+  turns=(d.messages||[]).map(m=>({role:m.role==='assistant'?'assistant':'user',content:m.content}));
+  if(!(d.messages||[]).length){ clearLog(true); }
+  $('#convs').classList.remove('open');
+ }catch(e){} }
+function newChat(){ convId=null; clearLog(true); $('#convs').classList.remove('open'); $('#msg').focus(); }
 
 async function boot(){
   const cfg = await (await fetch('/auth/config')).json();
@@ -139,7 +176,7 @@ async function boot(){
 }
 
 function add(role, text){
-  $('#empty').style.display='none';
+  const em=$('#empty'); if(em) em.style.display='none';
   const b=document.createElement('div'); b.className='bubble '+role;
   b.innerHTML='<div class="role">'+(role==='user'?'You':'ALLEN')+'</div>';
   const t=document.createElement('div'); t.textContent=text; b.appendChild(t);
@@ -156,11 +193,14 @@ async function send(text){
   add('user',m); const hist=turns.slice(-8); turns.push({role:'user',content:m});
   const thinking=add('allen','…');
   try {
-    const r=await api('/console/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:m,history:hist})});
+    const wasNew=!convId;
+    const r=await api('/console/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:m,history:hist,conversationId:convId})});
     const d=await r.json(); thinking.querySelector('div:last-child').textContent=d.reply||'(no reply)';
     turns.push({role:'assistant',content:d.reply});
+    if(d.conversationId) convId=d.conversationId;
     if(autoSpeak && d.reply) speak(d.reply);
     if(d.memoryChanged) loadMem();
+    if(wasNew) loadConvs();
   } catch(e){ thinking.remove(); if(e.message!=='login') $('#err').textContent=String(e); }
 }
 
@@ -200,6 +240,9 @@ async function loadMem(){ try{ const r=await api('/console/memory'); const d=awa
 // wires
 $('#f').addEventListener('submit',e=>{e.preventDefault();send($('#msg').value);});
 $('#mic').addEventListener('click',toggleMic);
+$('#convBtn').addEventListener('click',()=>{ $('#convs').classList.add('open'); loadConvs(); });
+$('#convs').addEventListener('click',e=>{ if(e.target.id==='convs') $('#convs').classList.remove('open'); });
+$('#newConv').addEventListener('click',newChat);
 $('#speakToggle').addEventListener('click',()=>{autoSpeak=!autoSpeak; $('#speakToggle').style.opacity=autoSpeak?'1':'.4';});
 $('#memBtn').addEventListener('click',()=>{ $('#mem').classList.add('open'); loadMem(); });
 $('#mem').addEventListener('click',e=>{ if(e.target.id==='mem') $('#mem').classList.remove('open'); });

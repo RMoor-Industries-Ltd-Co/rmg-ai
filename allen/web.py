@@ -169,17 +169,69 @@ def console_chat(body: dict, request: Request) -> dict:
     ns = user["namespace"]
     if not settings.llm_ready:
         raise HTTPException(503, "LLM not configured")
+    msg = ((body or {}).get("message") or "").strip()
+    if not msg:
+        raise HTTPException(400, "message required")
+    conv_id = (body or {}).get("conversationId")
+    title = None
+    if db.db_ready():
+        if not (conv_id and db.get_conversation(ns, conv_id)):
+            folder = (body or {}).get("folder") or "General"
+            title = msg[:48] + ("…" if len(msg) > 48 else "")
+            conv_id = db.create_conversation(ns, folder, title)["id"]
+        history = [{"role": m["role"], "content": m["content"]} for m in db.get_messages(conv_id)][-12:]
+        db.add_message(conv_id, "user", msg)
+    else:
+        history = (body or {}).get("history", [])
     context = _memory_context(ns)
-    raw = chat.respond(
-        (body or {}).get("message", ""),
-        (body or {}).get("brand"),
-        None,
-        (body or {}).get("history", []),
-        700,
-        context,
-    )
+    raw = chat.respond(msg, None, None, history, 700, context)
     reply, changed = _apply_memory_ops(ns, raw)
-    return {"reply": reply, "memoryChanged": changed}
+    if db.db_ready() and conv_id:
+        db.add_message(conv_id, "assistant", reply)
+    return {"reply": reply, "memoryChanged": changed, "conversationId": conv_id, "title": title}
+
+
+@router.get("/console/conversations")
+def list_conversations_ep(request: Request) -> dict:
+    user = _session_user(request)
+    return {"conversations": db.list_conversations(user["namespace"]) if db.db_ready() else []}
+
+
+@router.post("/console/conversations")
+def new_conversation_ep(body: dict, request: Request) -> dict:
+    user = _session_user(request)
+    if not db.db_ready():
+        raise HTTPException(503, "DB not configured")
+    return db.create_conversation(
+        user["namespace"], (body or {}).get("folder") or "General", (body or {}).get("title") or "New chat"
+    )
+
+
+@router.get("/console/conversations/{cid}")
+def get_conversation_ep(cid: str, request: Request) -> dict:
+    user = _session_user(request)
+    if not db.db_ready():
+        return {"messages": []}
+    conv = db.get_conversation(user["namespace"], cid)
+    if not conv:
+        raise HTTPException(404, "not found")
+    return {"conversation": conv, "messages": db.get_messages(cid)}
+
+
+@router.patch("/console/conversations/{cid}")
+def patch_conversation_ep(cid: str, body: dict, request: Request) -> dict:
+    user = _session_user(request)
+    if db.db_ready():
+        db.rename_conversation(user["namespace"], cid, (body or {}).get("title"), (body or {}).get("folder"))
+    return {"ok": True}
+
+
+@router.delete("/console/conversations/{cid}")
+def delete_conversation_ep(cid: str, request: Request) -> dict:
+    user = _session_user(request)
+    if db.db_ready():
+        db.delete_conversation(user["namespace"], cid)
+    return {"ok": True}
 
 
 @router.post("/console/speak")

@@ -64,6 +64,24 @@ def init_db() -> None:
             ALTER TABLE memories ADD COLUMN IF NOT EXISTS silo text;
             CREATE INDEX IF NOT EXISTS memories_ns_idx ON memories (namespace);
             CREATE INDEX IF NOT EXISTS memories_lane_silo_idx ON memories (namespace, lane, silo);
+
+            CREATE TABLE IF NOT EXISTS conversations (
+                id text PRIMARY KEY,
+                namespace text NOT NULL,
+                folder text NOT NULL DEFAULT 'General',
+                title text NOT NULL DEFAULT 'New chat',
+                created_at timestamptz DEFAULT now(),
+                updated_at timestamptz DEFAULT now()
+            );
+            CREATE TABLE IF NOT EXISTS messages (
+                id text PRIMARY KEY,
+                conversation_id text NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+                role text NOT NULL,
+                content text NOT NULL,
+                created_at timestamptz DEFAULT now()
+            );
+            CREATE INDEX IF NOT EXISTS conversations_ns_idx ON conversations (namespace, updated_at DESC);
+            CREATE INDEX IF NOT EXISTS messages_conv_idx ON messages (conversation_id, created_at);
             """
         )
 
@@ -149,3 +167,74 @@ def update_memory(namespace: str, mid: str, content: str) -> None:
 def delete_memory(namespace: str, mid: str) -> None:
     with _cursor() as cur:
         cur.execute("DELETE FROM memories WHERE id = %s AND namespace = %s", (mid, namespace))
+
+
+# ---- conversations + messages (chat history, organized into project folders) ----
+def create_conversation(namespace: str, folder: str = "General", title: str = "New chat") -> dict:
+    cid = f"conv-{int(time.time() * 1000)}-{secrets.randbelow(10000)}"
+    with _cursor() as cur:
+        cur.execute(
+            "INSERT INTO conversations (id, namespace, folder, title) VALUES (%s, %s, %s, %s) "
+            "RETURNING id, namespace, folder, title, created_at, updated_at",
+            (cid, namespace, folder or "General", title or "New chat"),
+        )
+        return cur.fetchone()
+
+
+def list_conversations(namespace: str) -> list[dict]:
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT id, folder, title, updated_at FROM conversations WHERE namespace = %s "
+            "ORDER BY updated_at DESC",
+            (namespace,),
+        )
+        return list(cur.fetchall())
+
+
+def get_conversation(namespace: str, cid: str) -> Optional[dict]:
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT id, folder, title, created_at, updated_at FROM conversations "
+            "WHERE id = %s AND namespace = %s",
+            (cid, namespace),
+        )
+        return cur.fetchone()
+
+
+def get_messages(conversation_id: str) -> list[dict]:
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT role, content, created_at FROM messages WHERE conversation_id = %s ORDER BY created_at",
+            (conversation_id,),
+        )
+        return list(cur.fetchall())
+
+
+def add_message(conversation_id: str, role: str, content: str) -> None:
+    mid = f"msg-{int(time.time() * 1000)}-{secrets.randbelow(100000)}"
+    with _cursor() as cur:
+        cur.execute(
+            "INSERT INTO messages (id, conversation_id, role, content) VALUES (%s, %s, %s, %s)",
+            (mid, conversation_id, role, content),
+        )
+        cur.execute("UPDATE conversations SET updated_at = now() WHERE id = %s", (conversation_id,))
+
+
+def rename_conversation(namespace: str, cid: str, title: Optional[str], folder: Optional[str]) -> None:
+    sets, args = [], []
+    if title is not None:
+        sets.append("title = %s")
+        args.append(title)
+    if folder is not None:
+        sets.append("folder = %s")
+        args.append(folder)
+    if not sets:
+        return
+    args.extend([cid, namespace])
+    with _cursor() as cur:
+        cur.execute(f"UPDATE conversations SET {', '.join(sets)} WHERE id = %s AND namespace = %s", args)
+
+
+def delete_conversation(namespace: str, cid: str) -> None:
+    with _cursor() as cur:
+        cur.execute("DELETE FROM conversations WHERE id = %s AND namespace = %s", (cid, namespace))
