@@ -5,6 +5,21 @@ from pydantic import BaseModel, Field
 OutputKind = Literal["content", "ad", "post", "newsletter", "book"]
 
 
+# ---- platform: projects + namespaced memory ----
+class CreateProjectRequest(BaseModel):
+    name: str
+    namespace: str
+
+
+class MemoryRequest(BaseModel):
+    content: str
+    brand: Optional[str] = None
+
+
+class MemoryUpdateRequest(BaseModel):
+    content: str
+
+
 class DraftRequest(BaseModel):
     brand: str = Field(..., description="Brand key, e.g. 'com', 'vlog'")
     topic: str = Field(..., description="Topic or brief to write from")

@@ -6,6 +6,10 @@ class Settings(BaseSettings):
 
     # Auth — shared key required on /draft, /speak, /listen (blank = open).
     allen_api_key: str = ""
+    admin_api_key: str = ""  # mints per-project API keys via POST /projects
+
+    # Platform data layer (projects + namespaced memory). Blank = stateless mode.
+    database_url: str = ""
 
     # LLM
     anthropic_api_key: str = ""

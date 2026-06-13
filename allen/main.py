@@ -1,11 +1,12 @@
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.responses import Response
 
-from . import brands, chat, docs, emotion, meeting, metadata, scripts, speech, topics
+from . import brands, chat, db, docs, emotion, meeting, metadata, scripts, speech, topics
 from .config import settings
 from .models import (
     ChatRequest,
     ChatResponse,
+    CreateProjectRequest,
     DirectRequest,
     DirectResponse,
     DraftRequest,
@@ -13,6 +14,8 @@ from .models import (
     HealthResponse,
     MeetingRequest,
     MeetingResponse,
+    MemoryRequest,
+    MemoryUpdateRequest,
     MetadataRequest,
     MetadataResponse,
     SpeakRequest,
@@ -23,10 +26,41 @@ from .models import (
 app = FastAPI(title="ALLEN", version="0.1.0")
 
 
+@app.on_event("startup")
+def _startup() -> None:
+    if db.db_ready():
+        try:
+            db.init_db()
+            db.seed_default()
+        except Exception as exc:  # don't crash the brain if the DB is slow to come up
+            print(f"[allen] DB init deferred: {exc}")
+
+
 def require_key(x_allen_key: str | None = Header(default=None)) -> None:
     """Guard credit-consuming endpoints. Open if ALLEN_API_KEY is unset."""
     if settings.allen_api_key and x_allen_key != settings.allen_api_key:
         raise HTTPException(401, "invalid or missing x-allen-key")
+
+
+def current_project(x_allen_key: str | None = Header(default=None)) -> dict:
+    """Resolve the caller's API key to a project + namespace (multi-tenant)."""
+    if db.db_ready():
+        proj = db.project_by_key(x_allen_key or "")
+        if proj:
+            return proj
+        # fall back to the shared key as the default 'atelier' project
+        if settings.allen_api_key and x_allen_key == settings.allen_api_key:
+            return {"id": "proj-atelier", "name": "Master Atelier", "namespace": "atelier"}
+        raise HTTPException(401, "invalid or missing API key")
+    # stateless mode: single shared key, one namespace
+    if settings.allen_api_key and x_allen_key != settings.allen_api_key:
+        raise HTTPException(401, "invalid or missing API key")
+    return {"id": "proj-default", "name": "default", "namespace": "default"}
+
+
+def require_admin(x_admin_key: str | None = Header(default=None)) -> None:
+    if not settings.admin_api_key or x_admin_key != settings.admin_api_key:
+        raise HTTPException(401, "admin key required")
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -36,8 +70,63 @@ def health() -> HealthResponse:
         "tts": "ok" if settings.tts_ready else "unconfigured",
         "stt": "ok" if settings.stt_ready else "unconfigured",
         "docs": "ok" if settings.docs_ready else "unconfigured",
+        "db": "ok" if settings.database_url else "unconfigured",
     }
     return HealthResponse(status="ok" if settings.llm_ready else "degraded", checks=checks)
+
+
+# ---- platform: identity, projects, namespaced memory ----
+@app.get("/me")
+def me(project: dict = Depends(current_project)) -> dict:
+    return {"project": project["name"], "namespace": project["namespace"]}
+
+
+@app.post("/projects", dependencies=[Depends(require_admin)])
+def create_project_ep(req: CreateProjectRequest) -> dict:
+    if not db.db_ready():
+        raise HTTPException(503, "platform DB not configured")
+    ns = "".join(c for c in req.namespace.lower() if c.isalnum() or c in "-_")
+    if not ns:
+        raise HTTPException(400, "namespace must be alphanumeric")
+    try:
+        return db.create_project(req.name, ns)
+    except Exception as exc:
+        raise HTTPException(400, f"could not create project (name/namespace taken?): {exc}") from exc
+
+
+@app.get("/projects", dependencies=[Depends(require_admin)])
+def list_projects_ep() -> dict:
+    return {"projects": db.list_projects() if db.db_ready() else []}
+
+
+@app.get("/memory")
+def get_memory(project: dict = Depends(current_project)) -> dict:
+    if not db.db_ready():
+        return {"namespace": project["namespace"], "memories": []}
+    return {"namespace": project["namespace"], "memories": db.list_memories(project["namespace"])}
+
+
+@app.post("/memory")
+def post_memory(req: MemoryRequest, project: dict = Depends(current_project)) -> dict:
+    if not db.db_ready():
+        raise HTTPException(503, "platform DB not configured")
+    return db.add_memory(project["namespace"], req.content, req.brand)
+
+
+@app.put("/memory/{mem_id}")
+def put_memory(mem_id: str, req: MemoryUpdateRequest, project: dict = Depends(current_project)) -> dict:
+    if not db.db_ready():
+        raise HTTPException(503, "platform DB not configured")
+    db.update_memory(project["namespace"], mem_id, req.content)
+    return {"ok": True}
+
+
+@app.delete("/memory/{mem_id}")
+def delete_memory(mem_id: str, project: dict = Depends(current_project)) -> dict:
+    if not db.db_ready():
+        raise HTTPException(503, "platform DB not configured")
+    db.delete_memory(project["namespace"], mem_id)
+    return {"ok": True}
 
 
 @app.get("/brands")
