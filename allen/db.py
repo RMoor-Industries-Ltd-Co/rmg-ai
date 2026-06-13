@@ -64,8 +64,18 @@ def init_db() -> None:
             ALTER TABLE memories ADD COLUMN IF NOT EXISTS unit text;
             ALTER TABLE memories ADD COLUMN IF NOT EXISTS silo text;
             ALTER TABLE memories ADD COLUMN IF NOT EXISTS pinned boolean NOT NULL DEFAULT false;
+            -- governance fields (memory classes + lifecycle + audit trail)
+            ALTER TABLE memories ADD COLUMN IF NOT EXISTS memory_class text;     -- core|profile|project|commitment|session|sensitive
+            ALTER TABLE memories ADD COLUMN IF NOT EXISTS sensitivity text;      -- low|medium|high
+            ALTER TABLE memories ADD COLUMN IF NOT EXISTS priority text;         -- constitutional|high|normal|low
+            ALTER TABLE memories ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'active';  -- active|superseded|tombstoned
+            ALTER TABLE memories ADD COLUMN IF NOT EXISTS updated_at timestamptz;
+            ALTER TABLE memories ADD COLUMN IF NOT EXISTS expires_at timestamptz;
+            ALTER TABLE memories ADD COLUMN IF NOT EXISTS review_required boolean NOT NULL DEFAULT false;
+            ALTER TABLE memories ADD COLUMN IF NOT EXISTS supersedes text;       -- id of the memory this one replaces
             CREATE INDEX IF NOT EXISTS memories_ns_idx ON memories (namespace);
             CREATE INDEX IF NOT EXISTS memories_lane_silo_idx ON memories (namespace, lane, silo);
+            CREATE INDEX IF NOT EXISTS memories_ns_status_idx ON memories (namespace, status);
 
             CREATE TABLE IF NOT EXISTS conversations (
                 id text PRIMARY KEY,
@@ -140,14 +150,35 @@ def create_project(name: str, namespace: str) -> dict:
     return {**row, "api_key": key}
 
 
-# ---- namespaced memory (lane = business|personal, silo = granular topic) ----
-def list_memories(namespace: str) -> list[dict]:
+# ---- namespaced memory ----
+# Two orthogonal axes: memory_class (core|profile|project|commitment|session|sensitive)
+# governs lifecycle + retrieval priority; lane/unit/silo govern world-routing (Drive archives).
+_MEMORY_COLS = (
+    "id, namespace, brand, content, source, lane, unit, silo, pinned, "
+    "memory_class, sensitivity, priority, status, review_required, supersedes, "
+    "created_at, updated_at, expires_at"
+)
+
+# Retrieval priority (policy #5): constitutional first (oldest-enshrined first so directive #1
+# precedes #2), then by class rank, then direct-from-Rahm over inferred, then most-recent.
+_RETRIEVAL_ORDER = (
+    "ORDER BY pinned DESC, "
+    "CASE WHEN pinned THEN created_at END ASC, "
+    "CASE memory_class WHEN 'core' THEN 0 WHEN 'profile' THEN 1 WHEN 'project' THEN 2 "
+    "WHEN 'commitment' THEN 3 WHEN 'sensitive' THEN 4 WHEN 'session' THEN 5 ELSE 6 END, "
+    "(source = 'rahm_direct') DESC, created_at DESC"
+)
+
+
+def list_memories(namespace: str, include_inactive: bool = False) -> list[dict]:
+    """Active, non-expired memories in retrieval-priority order. Set include_inactive=True
+    for an audit view that also returns superseded/tombstoned/expired records."""
+    where = "WHERE namespace = %s"
+    if not include_inactive:
+        where += " AND status = 'active' AND (expires_at IS NULL OR expires_at > now())"
+    order = "ORDER BY created_at DESC" if include_inactive else _RETRIEVAL_ORDER
     with _cursor() as cur:
-        cur.execute(
-            "SELECT id, namespace, brand, content, source, lane, unit, silo, pinned, created_at FROM memories "
-            "WHERE namespace = %s ORDER BY pinned DESC, created_at DESC",
-            (namespace,),
-        )
+        cur.execute(f"SELECT {_MEMORY_COLS} FROM memories {where} {order}", (namespace,))
         return list(cur.fetchall())
 
 
@@ -160,29 +191,84 @@ def add_memory(
     source: str = "user",
     pinned: bool = False,
     unit: Optional[str] = None,
+    memory_class: Optional[str] = None,
+    sensitivity: Optional[str] = None,
+    priority: Optional[str] = None,
+    expires_at: Optional[str] = None,
+    review_required: bool = False,
+    supersedes: Optional[str] = None,
 ) -> dict:
     mid = f"mem-{int(time.time() * 1000)}-{secrets.randbelow(10000)}"
     with _cursor() as cur:
         cur.execute(
-            "INSERT INTO memories (id, namespace, brand, content, source, lane, unit, silo, pinned) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) "
-            "RETURNING id, namespace, brand, content, source, lane, unit, silo, pinned, created_at",
-            (mid, namespace, brand, content, source, lane, unit, silo, pinned),
+            "INSERT INTO memories (id, namespace, brand, content, source, lane, unit, silo, pinned, "
+            "memory_class, sensitivity, priority, expires_at, review_required, supersedes) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+            f"RETURNING {_MEMORY_COLS}",
+            (mid, namespace, brand, content, source, lane, unit, silo, pinned,
+             memory_class, sensitivity, priority, expires_at, review_required, supersedes),
         )
         return cur.fetchone()
 
 
 def set_pinned(namespace: str, mid: str, pinned: bool) -> None:
     with _cursor() as cur:
-        cur.execute("UPDATE memories SET pinned = %s WHERE id = %s AND namespace = %s", (pinned, mid, namespace))
+        cur.execute(
+            "UPDATE memories SET pinned = %s, updated_at = now() WHERE id = %s AND namespace = %s",
+            (pinned, mid, namespace),
+        )
 
 
 def update_memory(namespace: str, mid: str, content: str) -> None:
     with _cursor() as cur:
-        cur.execute("UPDATE memories SET content = %s WHERE id = %s AND namespace = %s", (content, mid, namespace))
+        cur.execute(
+            "UPDATE memories SET content = %s, updated_at = now() WHERE id = %s AND namespace = %s",
+            (content, mid, namespace),
+        )
+
+
+def supersede_memory(namespace: str, old_id: str, content: str) -> Optional[dict]:
+    """Correction flow (policy #3): mark the old memory 'superseded' (audit trail kept) and
+    insert a new active memory that records what it supersedes — never a silent overwrite.
+    The replacement inherits the old memory's class/lane/sensitivity/priority/pinned."""
+    with _cursor() as cur:
+        cur.execute(
+            f"SELECT {_MEMORY_COLS} FROM memories WHERE id = %s AND namespace = %s", (old_id, namespace)
+        )
+        old = cur.fetchone()
+        if not old:
+            return None
+        cur.execute(
+            "UPDATE memories SET status = 'superseded', updated_at = now() WHERE id = %s AND namespace = %s",
+            (old_id, namespace),
+        )
+    return add_memory(
+        namespace, content,
+        lane=old.get("lane"), silo=old.get("silo"), brand=old.get("brand"),
+        source="rahm_direct", pinned=bool(old.get("pinned")), unit=old.get("unit"),
+        memory_class=old.get("memory_class"), sensitivity=old.get("sensitivity"),
+        priority=old.get("priority"), supersedes=old_id,
+    )
 
 
 def delete_memory(namespace: str, mid: str) -> None:
+    """Deletion flow (policy #4): hard-delete ephemeral 'session' memories; tombstone everything
+    else (status='tombstoned' — removed from retrieval but retained for audit)."""
+    with _cursor() as cur:
+        cur.execute("SELECT memory_class FROM memories WHERE id = %s AND namespace = %s", (mid, namespace))
+        row = cur.fetchone()
+        if row and (row.get("memory_class") or "") == "session":
+            cur.execute("DELETE FROM memories WHERE id = %s AND namespace = %s", (mid, namespace))
+        else:
+            cur.execute(
+                "UPDATE memories SET status = 'tombstoned', updated_at = now() "
+                "WHERE id = %s AND namespace = %s",
+                (mid, namespace),
+            )
+
+
+def hard_delete_memory(namespace: str, mid: str) -> None:
+    """Force a hard delete regardless of class (e.g. Rahm explicitly purges a sensitive record)."""
     with _cursor() as cur:
         cur.execute("DELETE FROM memories WHERE id = %s AND namespace = %s", (mid, namespace))
 

@@ -119,7 +119,7 @@ def get_memory(project: dict = Depends(current_project)) -> dict:
 def post_memory(req: MemoryRequest, project: dict = Depends(current_project)) -> dict:
     if not db.db_ready():
         raise HTTPException(503, "platform DB not configured")
-    return db.add_memory(project["namespace"], req.content, req.brand)
+    return db.add_memory(project["namespace"], req.content, brand=req.brand)
 
 
 @app.put("/memory/{mem_id}")

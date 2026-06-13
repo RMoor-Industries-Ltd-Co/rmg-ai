@@ -88,8 +88,8 @@ def _memory_context(namespace: str) -> Optional[str]:
             out.append(lane)
             for silo, items in silos.items():
                 for m in items:
-                    unit = f"{m.get('unit')} | " if m.get("unit") else ""
-                    out.append(f"  [{unit}{silo} | id:{m['id']}] {m['content']}")
+                    tags = " | ".join(t for t in [m.get("memory_class"), m.get("unit"), silo] if t)
+                    out.append(f"  [{tags} | id:{m['id']}] {m['content']}")
     return "\n".join(out)
 
 
@@ -113,13 +113,16 @@ def _apply_memory_ops(namespace: str, reply: str) -> tuple[str, bool]:
             if op == "add" and (o.get("content") or "").strip():
                 cls = classify.classify_memory(o["content"])
                 db.add_memory(
-                    namespace, o["content"].strip(), cls["lane"], cls["silo"], source="allen", unit=cls.get("unit")
+                    namespace, o["content"].strip(), cls["lane"], cls["silo"], source="allen",
+                    unit=cls.get("unit"), memory_class=cls.get("memory_class"), sensitivity=cls.get("sensitivity"),
                 )
                 changed = True
             elif op == "update" and o.get("id") and (o.get("content") or "").strip():
-                db.update_memory(namespace, o["id"], o["content"].strip())
+                # correction flow: supersede (keep audit trail), never silently overwrite
+                db.supersede_memory(namespace, o["id"], o["content"].strip())
                 changed = True
             elif op == "delete" and o.get("id"):
+                # deletion flow: tombstone (or hard-delete session-class) inside db.delete_memory
                 db.delete_memory(namespace, o["id"])
                 changed = True
         except Exception:
@@ -313,10 +316,14 @@ def console_add_memory(body: dict, request: Request) -> dict:
     lane = (body or {}).get("lane")
     silo = (body or {}).get("silo")
     unit = (body or {}).get("unit")
+    cls = classify.classify_memory(content)
     if not lane:
-        cls = classify.classify_memory(content)
         lane, silo, unit = cls["lane"], cls["silo"], cls.get("unit")
-    return db.add_memory(user["namespace"], content, lane, silo, unit=unit)
+    # a memory added by hand in the console is a direct statement from Rahm
+    return db.add_memory(
+        user["namespace"], content, lane, silo, source="rahm_direct", unit=unit,
+        memory_class=cls.get("memory_class"), sensitivity=cls.get("sensitivity"),
+    )
 
 
 @router.delete("/console/memory/{mem_id}")
