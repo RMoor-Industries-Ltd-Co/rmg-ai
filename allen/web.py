@@ -184,6 +184,9 @@ def console_chat(body: dict, request: Request) -> dict:
     else:
         history = (body or {}).get("history", [])
     context = _memory_context(ns)
+    now = (body or {}).get("now")
+    if now:
+        context = f"Current date and time (Rahm's local): {now}" + (("\n\n" + context) if context else "")
     raw = chat.respond(msg, None, None, history, 700, context)
     reply, changed = _apply_memory_ops(ns, raw)
     if db.db_ready() and conv_id:

@@ -65,7 +65,9 @@
   .conv-item { display:flex; align-items:center; justify-content:space-between; gap:8px; background:var(--bg); border:1px solid var(--line); border-radius:9px; padding:10px 11px; font-size:14px; }
   .conv-item.active { border-color:var(--gold); }
   .conv-title { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; }
-  .conv-item .x { background:transparent; border:none; color:var(--muted); cursor:pointer; flex:none; }
+  .conv-item .x { background:transparent; border:none; color:var(--muted); cursor:pointer; flex:none; font-size:12px; padding:2px 3px; }
+  .conv-item .x:hover { color:var(--gold); }
+  .conv-acts { display:flex; gap:1px; flex:none; }
 </style>
 </head>
 <body>
@@ -76,6 +78,7 @@
     <div class="sub" id="who">the intelligence answer</div>
   </div>
   <div class="spacer"></div>
+  <button class="icon-btn" id="newChatTop" title="New chat" style="display:none">➕</button>
   <button class="icon-btn" id="convBtn" title="Chats" style="display:none">💬</button>
   <button class="icon-btn" id="speakToggle" title="Speak replies">🔊</button>
   <button class="icon-btn" id="memBtn" title="Memory" style="display:none">🧠</button>
@@ -110,7 +113,7 @@
 </div>
 
 <div id="convs"><div class="sheet left">
-  <div class="conv-top"><h3>💬 Chats</h3><button class="icon-btn" id="newConv">+ New</button></div>
+  <div class="conv-top"><h3>💬 Chats</h3><span style="display:flex;gap:6px"><button class="icon-btn" id="newFolder" title="New project folder">📁+</button><button class="icon-btn" id="newConv">+ New</button></span></div>
   <ul class="conv-list" id="convList"></ul>
 </div></div>
 
@@ -127,15 +130,15 @@
 
 <script>
 const $ = s => document.querySelector(s);
-let autoSpeak = true, turns = [], recorder = null, chunks = [], convId = null;
+let autoSpeak = true, turns = [], recorder = null, chunks = [], convId = null, pendingFolder = 'General';
 
 async function api(path, opts={}) {
   const r = await fetch(path, { credentials:'same-origin', ...opts });
   if (r.status === 401) { showLogin(); throw new Error('login'); }
   return r;
 }
-function showLogin(){ $('#login').style.display='flex'; $('#app').style.display='none'; $('#convBtn').style.display='none'; $('#memBtn').style.display='none'; $('#outBtn').style.display='none'; }
-function showApp(email){ $('#login').style.display='none'; $('#app').style.display='flex'; $('#convBtn').style.display=''; $('#memBtn').style.display=''; $('#outBtn').style.display=''; if(email) $('#outBtn').title='Sign out ('+email+')'; initChats(); }
+function showLogin(){ $('#login').style.display='flex'; $('#app').style.display='none'; ['newChatTop','convBtn','memBtn','outBtn'].forEach(id=>$('#'+id).style.display='none'); }
+function showApp(email){ $('#login').style.display='none'; $('#app').style.display='flex'; ['newChatTop','convBtn','memBtn','outBtn'].forEach(id=>$('#'+id).style.display=''); if(email) $('#outBtn').title='Sign out ('+email+')'; initChats(); }
 
 function clearLog(showEmpty){ turns=[]; $('#log').innerHTML=''; if(showEmpty){ const e=document.createElement('div'); e.className='empty'; e.id='empty'; e.innerHTML='<p class="muted">Talk to ALLEN. He answers out loud.</p>'; $('#log').appendChild(e); } }
 async function initChats(){ try{ const r=await api('/console/conversations'); const d=await r.json(); const cs=d.conversations||[]; if(cs.length){ openConversation(cs[0].id); } else { clearLog(true); } }catch(e){ clearLog(true); } }
@@ -145,8 +148,11 @@ async function loadConvs(){ try{ const r=await api('/console/conversations'); co
   Object.keys(folders).forEach(folder=>{ const h=document.createElement('li'); h.className='folder-head'; h.textContent='📁 '+folder; ul.appendChild(h);
     folders[folder].forEach(c=>{ const li=document.createElement('li'); li.className='conv-item'+(c.id===convId?' active':'');
       const t=document.createElement('span'); t.className='conv-title'; t.textContent=c.title; t.onclick=()=>openConversation(c.id); li.appendChild(t);
-      const x=document.createElement('button'); x.className='x'; x.textContent='✕'; x.onclick=async(e)=>{ e.stopPropagation(); await api('/console/conversations/'+c.id,{method:'DELETE'}); if(c.id===convId){ convId=null; clearLog(true); } loadConvs(); }; li.appendChild(x);
-      ul.appendChild(li); }); });
+      const acts=document.createElement('span'); acts.className='conv-acts';
+      const ren=document.createElement('button'); ren.className='x'; ren.textContent='✎'; ren.title='Rename'; ren.onclick=(e)=>{ e.stopPropagation(); renameConv(c); }; acts.appendChild(ren);
+      const mv=document.createElement('button'); mv.className='x'; mv.textContent='📁'; mv.title='Move to folder'; mv.onclick=(e)=>{ e.stopPropagation(); moveConv(c); }; acts.appendChild(mv);
+      const x=document.createElement('button'); x.className='x'; x.textContent='✕'; x.title='Delete'; x.onclick=async(e)=>{ e.stopPropagation(); await api('/console/conversations/'+c.id,{method:'DELETE'}); if(c.id===convId){ convId=null; clearLog(true); } loadConvs(); }; acts.appendChild(x);
+      li.appendChild(acts); ul.appendChild(li); }); });
  }catch(e){} }
 async function openConversation(id){ try{ const r=await api('/console/conversations/'+id); const d=await r.json(); convId=id; clearLog(false);
   (d.messages||[]).forEach(m=> add(m.role==='assistant'?'allen':'user', m.content));
@@ -154,7 +160,9 @@ async function openConversation(id){ try{ const r=await api('/console/conversati
   if(!(d.messages||[]).length){ clearLog(true); }
   $('#convs').classList.remove('open');
  }catch(e){} }
-function newChat(){ convId=null; clearLog(true); $('#convs').classList.remove('open'); $('#msg').focus(); }
+function newChat(folder){ convId=null; pendingFolder=folder||'General'; clearLog(true); $('#convs').classList.remove('open'); $('#msg').focus(); }
+async function renameConv(c){ const t=prompt('Rename conversation:', c.title); if(t!==null && t.trim()){ await api('/console/conversations/'+c.id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:t.trim()})}); loadConvs(); } }
+async function moveConv(c){ const f=prompt('Move to project folder:', c.folder||'General'); if(f!==null && f.trim()){ await api('/console/conversations/'+c.id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({folder:f.trim()})}); loadConvs(); } }
 
 async function boot(){
   const cfg = await (await fetch('/auth/config')).json();
@@ -194,7 +202,7 @@ async function send(text){
   const thinking=add('allen','…');
   try {
     const wasNew=!convId;
-    const r=await api('/console/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:m,history:hist,conversationId:convId})});
+    const r=await api('/console/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:m,history:hist,conversationId:convId,folder:pendingFolder,now:new Date().toString()})});
     const d=await r.json(); thinking.querySelector('div:last-child').textContent=d.reply||'(no reply)';
     turns.push({role:'assistant',content:d.reply});
     if(d.conversationId) convId=d.conversationId;
@@ -242,7 +250,9 @@ $('#f').addEventListener('submit',e=>{e.preventDefault();send($('#msg').value);}
 $('#mic').addEventListener('click',toggleMic);
 $('#convBtn').addEventListener('click',()=>{ $('#convs').classList.add('open'); loadConvs(); });
 $('#convs').addEventListener('click',e=>{ if(e.target.id==='convs') $('#convs').classList.remove('open'); });
-$('#newConv').addEventListener('click',newChat);
+$('#newConv').addEventListener('click',()=>newChat('General'));
+$('#newChatTop').addEventListener('click',()=>newChat('General'));
+$('#newFolder').addEventListener('click',()=>{ const f=prompt('New project folder name:'); if(f && f.trim()){ newChat(f.trim()); } });
 $('#speakToggle').addEventListener('click',()=>{autoSpeak=!autoSpeak; $('#speakToggle').style.opacity=autoSpeak?'1':'.4';});
 $('#memBtn').addEventListener('click',()=>{ $('#mem').classList.add('open'); loadMem(); });
 $('#mem').addEventListener('click',e=>{ if(e.target.id==='mem') $('#mem').classList.remove('open'); });
