@@ -281,20 +281,27 @@ async function toggleMic(){
 }
 
 // memory drawer
+function memItem(m){
+  const li=document.createElement('li');
+  const wrap=document.createElement('span');
+  const tag=document.createElement('span'); tag.className='silo'; tag.textContent=m.pinned?'📌 core':(m.silo||'general'); wrap.appendChild(tag);
+  wrap.appendChild(document.createTextNode(' '+m.content)); li.appendChild(wrap);
+  const acts=document.createElement('span'); acts.style.cssText='display:flex;gap:1px;flex:none';
+  const pin=document.createElement('button'); pin.className='x'; pin.textContent=m.pinned?'📌':'📍'; pin.title=m.pinned?'Unpin from core':'Pin as core directive';
+  pin.onclick=async()=>{ await api('/console/memory/'+m.id+'/pin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pinned:!m.pinned})}); loadMem(); }; acts.appendChild(pin);
+  const x=document.createElement('button'); x.className='x'; x.textContent='✕'; x.title='Forget'; x.onclick=async()=>{ await api('/console/memory/'+m.id,{method:'DELETE'}); loadMem(); }; acts.appendChild(x);
+  li.appendChild(acts); return li;
+}
 async function loadMem(){ try{ const r=await api('/console/memory'); const d=await r.json(); const ul=$('#memList'); ul.innerHTML='';
   const mems=d.memories||[];
   if(!mems.length){ ul.innerHTML='<li class="muted">No memories yet. Tell ALLEN anything and he’ll file it.</li>'; return; }
-  const lanes={}; mems.forEach(m=>{ const l=m.lane||'personal'; (lanes[l]=lanes[l]||[]).push(m); });
+  const pinned=mems.filter(m=>m.pinned), rest=mems.filter(m=>!m.pinned);
+  if(pinned.length){ const h=document.createElement('li'); h.className='lane-head'; h.textContent='📌 Core — ALLEN\'s purpose & directives'; ul.appendChild(h); pinned.forEach(m=>ul.appendChild(memItem(m))); }
+  const lanes={}; rest.forEach(m=>{ const l=m.lane||'personal'; (lanes[l]=lanes[l]||[]).push(m); });
   const order=['business','personal'].concat(Object.keys(lanes).filter(l=>l!=='business'&&l!=='personal'));
   order.forEach(lane=>{ const items=lanes[lane]; if(!items||!items.length) return;
     const h=document.createElement('li'); h.className='lane-head'; h.textContent=lane==='business'?'💼 Business':(lane==='personal'?'🏡 Personal':lane); ul.appendChild(h);
-    items.forEach(m=>{ const li=document.createElement('li');
-      const wrap=document.createElement('span'); wrap.style.minWidth='0';
-      if(m.silo){ const b=document.createElement('span'); b.className='silo'; b.textContent=m.silo; wrap.appendChild(b); }
-      wrap.appendChild(document.createTextNode(' '+m.content)); li.appendChild(wrap);
-      const x=document.createElement('button'); x.className='x'; x.textContent='✕'; x.onclick=async()=>{ await api('/console/memory/'+m.id,{method:'DELETE'}); loadMem(); }; li.appendChild(x);
-      ul.appendChild(li); });
-  });
+    items.forEach(m=>ul.appendChild(memItem(m))); });
  }catch(e){} }
 
 // wires

@@ -62,6 +62,7 @@ def init_db() -> None:
             );
             ALTER TABLE memories ADD COLUMN IF NOT EXISTS lane text;
             ALTER TABLE memories ADD COLUMN IF NOT EXISTS silo text;
+            ALTER TABLE memories ADD COLUMN IF NOT EXISTS pinned boolean NOT NULL DEFAULT false;
             CREATE INDEX IF NOT EXISTS memories_ns_idx ON memories (namespace);
             CREATE INDEX IF NOT EXISTS memories_lane_silo_idx ON memories (namespace, lane, silo);
 
@@ -142,8 +143,8 @@ def create_project(name: str, namespace: str) -> dict:
 def list_memories(namespace: str) -> list[dict]:
     with _cursor() as cur:
         cur.execute(
-            "SELECT id, namespace, brand, content, source, lane, silo, created_at FROM memories "
-            "WHERE namespace = %s ORDER BY created_at DESC",
+            "SELECT id, namespace, brand, content, source, lane, silo, pinned, created_at FROM memories "
+            "WHERE namespace = %s ORDER BY pinned DESC, created_at DESC",
             (namespace,),
         )
         return list(cur.fetchall())
@@ -156,16 +157,22 @@ def add_memory(
     silo: Optional[str] = None,
     brand: Optional[str] = None,
     source: str = "user",
+    pinned: bool = False,
 ) -> dict:
     mid = f"mem-{int(time.time() * 1000)}-{secrets.randbelow(10000)}"
     with _cursor() as cur:
         cur.execute(
-            "INSERT INTO memories (id, namespace, brand, content, source, lane, silo) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s) "
-            "RETURNING id, namespace, brand, content, source, lane, silo, created_at",
-            (mid, namespace, brand, content, source, lane, silo),
+            "INSERT INTO memories (id, namespace, brand, content, source, lane, silo, pinned) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
+            "RETURNING id, namespace, brand, content, source, lane, silo, pinned, created_at",
+            (mid, namespace, brand, content, source, lane, silo, pinned),
         )
         return cur.fetchone()
+
+
+def set_pinned(namespace: str, mid: str, pinned: bool) -> None:
+    with _cursor() as cur:
+        cur.execute("UPDATE memories SET pinned = %s WHERE id = %s AND namespace = %s", (pinned, mid, namespace))
 
 
 def update_memory(namespace: str, mid: str, content: str) -> None:

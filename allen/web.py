@@ -69,17 +69,26 @@ def _memory_context(namespace: str) -> Optional[str]:
     mems = db.list_memories(namespace)
     if not mems:
         return None
-    lanes: "OrderedDict[str, OrderedDict[str, list]]" = OrderedDict()
-    for m in mems:
-        lane = (m.get("lane") or "personal").upper()
-        silo = m.get("silo") or "general"
-        lanes.setdefault(lane, OrderedDict()).setdefault(silo, []).append(m)
-    out = ["What you remember about Rahm — use the lane and silo relevant to what he's talking about:"]
-    for lane, silos in lanes.items():
-        out.append(lane)
-        for silo, items in silos.items():
-            for m in items:
-                out.append(f"  [{silo} | id:{m['id']}] {m['content']}")
+    pinned = [m for m in mems if m.get("pinned")]
+    rest = [m for m in mems if not m.get("pinned")]
+    out: list[str] = []
+    if pinned:
+        out.append("ALLEN'S CORE PURPOSE & DIRECTIVES — always honor these; they define who you are and what you serve:")
+        for m in pinned:
+            out.append(f"  ★ [id:{m['id']}] {m['content']}")
+        out.append("")
+    if rest:
+        lanes: "OrderedDict[str, OrderedDict[str, list]]" = OrderedDict()
+        for m in rest:
+            lane = (m.get("lane") or "personal").upper()
+            silo = m.get("silo") or "general"
+            lanes.setdefault(lane, OrderedDict()).setdefault(silo, []).append(m)
+        out.append("What you remember about Rahm — use the lane and silo relevant to what he's talking about:")
+        for lane, silos in lanes.items():
+            out.append(lane)
+            for silo, items in silos.items():
+                for m in items:
+                    out.append(f"  [{silo} | id:{m['id']}] {m['content']}")
     return "\n".join(out)
 
 
@@ -311,4 +320,12 @@ def console_del_memory(mem_id: str, request: Request) -> dict:
     user = _session_user(request)
     if db.db_ready():
         db.delete_memory(user["namespace"], mem_id)
+    return {"ok": True}
+
+
+@router.post("/console/memory/{mem_id}/pin")
+def console_pin_memory(mem_id: str, body: dict, request: Request) -> dict:
+    user = _session_user(request)
+    if db.db_ready():
+        db.set_pinned(user["namespace"], mem_id, bool((body or {}).get("pinned", True)))
     return {"ok": True}
