@@ -88,7 +88,8 @@ def _memory_context(namespace: str) -> Optional[str]:
             out.append(lane)
             for silo, items in silos.items():
                 for m in items:
-                    out.append(f"  [{silo} | id:{m['id']}] {m['content']}")
+                    unit = f"{m.get('unit')} | " if m.get("unit") else ""
+                    out.append(f"  [{unit}{silo} | id:{m['id']}] {m['content']}")
     return "\n".join(out)
 
 
@@ -111,7 +112,9 @@ def _apply_memory_ops(namespace: str, reply: str) -> tuple[str, bool]:
             op = o.get("op")
             if op == "add" and (o.get("content") or "").strip():
                 cls = classify.classify_memory(o["content"])
-                db.add_memory(namespace, o["content"].strip(), cls["lane"], cls["silo"], source="allen")
+                db.add_memory(
+                    namespace, o["content"].strip(), cls["lane"], cls["silo"], source="allen", unit=cls.get("unit")
+                )
                 changed = True
             elif op == "update" and o.get("id") and (o.get("content") or "").strip():
                 db.update_memory(namespace, o["id"], o["content"].strip())
@@ -309,10 +312,11 @@ def console_add_memory(body: dict, request: Request) -> dict:
     # Honour an explicit lane/silo, else let ALLEN classify it.
     lane = (body or {}).get("lane")
     silo = (body or {}).get("silo")
+    unit = (body or {}).get("unit")
     if not lane:
         cls = classify.classify_memory(content)
-        lane, silo = cls["lane"], cls["silo"]
-    return db.add_memory(user["namespace"], content, lane, silo)
+        lane, silo, unit = cls["lane"], cls["silo"], cls.get("unit")
+    return db.add_memory(user["namespace"], content, lane, silo, unit=unit)
 
 
 @router.delete("/console/memory/{mem_id}")

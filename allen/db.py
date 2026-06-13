@@ -61,6 +61,7 @@ def init_db() -> None:
                 created_at timestamptz DEFAULT now()
             );
             ALTER TABLE memories ADD COLUMN IF NOT EXISTS lane text;
+            ALTER TABLE memories ADD COLUMN IF NOT EXISTS unit text;
             ALTER TABLE memories ADD COLUMN IF NOT EXISTS silo text;
             ALTER TABLE memories ADD COLUMN IF NOT EXISTS pinned boolean NOT NULL DEFAULT false;
             CREATE INDEX IF NOT EXISTS memories_ns_idx ON memories (namespace);
@@ -143,7 +144,7 @@ def create_project(name: str, namespace: str) -> dict:
 def list_memories(namespace: str) -> list[dict]:
     with _cursor() as cur:
         cur.execute(
-            "SELECT id, namespace, brand, content, source, lane, silo, pinned, created_at FROM memories "
+            "SELECT id, namespace, brand, content, source, lane, unit, silo, pinned, created_at FROM memories "
             "WHERE namespace = %s ORDER BY pinned DESC, created_at DESC",
             (namespace,),
         )
@@ -158,14 +159,15 @@ def add_memory(
     brand: Optional[str] = None,
     source: str = "user",
     pinned: bool = False,
+    unit: Optional[str] = None,
 ) -> dict:
     mid = f"mem-{int(time.time() * 1000)}-{secrets.randbelow(10000)}"
     with _cursor() as cur:
         cur.execute(
-            "INSERT INTO memories (id, namespace, brand, content, source, lane, silo, pinned) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
-            "RETURNING id, namespace, brand, content, source, lane, silo, pinned, created_at",
-            (mid, namespace, brand, content, source, lane, silo, pinned),
+            "INSERT INTO memories (id, namespace, brand, content, source, lane, unit, silo, pinned) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) "
+            "RETURNING id, namespace, brand, content, source, lane, unit, silo, pinned, created_at",
+            (mid, namespace, brand, content, source, lane, unit, silo, pinned),
         )
         return cur.fetchone()
 
