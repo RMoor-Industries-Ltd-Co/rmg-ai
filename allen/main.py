@@ -1,7 +1,7 @@
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.responses import Response
 
-from . import brands, chat, db, docs, emotion, meeting, metadata, scripts, speech, topics
+from . import brands, chat, db, docs, emotion, meeting, metadata, scripts, speech, topics, web
 from .config import settings
 from .models import (
     ChatRequest,
@@ -24,6 +24,7 @@ from .models import (
 )
 
 app = FastAPI(title="ALLEN", version="0.1.0")
+app.include_router(web.router)
 
 
 @app.on_event("startup")

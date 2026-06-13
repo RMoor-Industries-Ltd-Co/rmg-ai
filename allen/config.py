@@ -11,6 +11,11 @@ class Settings(BaseSettings):
     # Platform data layer (projects + namespaced memory). Blank = stateless mode.
     database_url: str = ""
 
+    # ALLEN I VERSE console — Google sign-in (single authorized user) + session cookie.
+    google_client_id: str = ""
+    auth_allowed_email: str = ""
+    cookie_secret: str = ""
+
     # LLM
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-3-5-sonnet-latest"  # override via env to current model
