@@ -26,6 +26,14 @@ from .models import (
 app = FastAPI(title="ALLEN", version="0.1.0")
 app.include_router(web.router)
 
+from pathlib import Path as _Path  # noqa: E402
+
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+
+_static_dir = _Path(__file__).parent / "static"
+if _static_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
+
 
 @app.on_event("startup")
 def _startup() -> None:
