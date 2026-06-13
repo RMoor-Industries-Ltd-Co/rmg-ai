@@ -50,6 +50,8 @@
   .mem-list { list-style:none; margin:0; padding:0; display:grid; gap:7px; }
   .mem-list li { display:flex; justify-content:space-between; gap:10px; background:var(--bg); border:1px solid var(--line); border-radius:9px; padding:9px 11px; font-size:14px; }
   .mem-list .x { background:transparent; border:none; color:var(--muted); cursor:pointer; }
+  .mem-list .lane-head { background:transparent; border:none; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--gold); padding:10px 2px 2px; }
+  .silo { font-size:9px; text-transform:uppercase; letter-spacing:.03em; background:#1d2b3a; color:var(--gold2); border-radius:4px; padding:1px 5px; }
   .muted { color:var(--muted); }
   .err { color:#ff6b6b; font-size:13px; padding:0 16px; }
 </style>
@@ -158,6 +160,7 @@ async function send(text){
     const d=await r.json(); thinking.querySelector('div:last-child').textContent=d.reply||'(no reply)';
     turns.push({role:'assistant',content:d.reply});
     if(autoSpeak && d.reply) speak(d.reply);
+    if(d.memoryChanged) loadMem();
   } catch(e){ thinking.remove(); if(e.message!=='login') $('#err').textContent=String(e); }
 }
 
@@ -179,9 +182,20 @@ async function toggleMic(){
 
 // memory drawer
 async function loadMem(){ try{ const r=await api('/console/memory'); const d=await r.json(); const ul=$('#memList'); ul.innerHTML='';
-  (d.memories||[]).forEach(m=>{ const li=document.createElement('li'); const s=document.createElement('span'); s.textContent=m.content; li.appendChild(s);
-    const x=document.createElement('button'); x.className='x'; x.textContent='✕'; x.onclick=async()=>{ await api('/console/memory/'+m.id,{method:'DELETE'}); loadMem(); }; li.appendChild(x); ul.appendChild(li); });
-  if(!(d.memories||[]).length){ ul.innerHTML='<li class="muted">No memories yet.</li>'; } }catch(e){} }
+  const mems=d.memories||[];
+  if(!mems.length){ ul.innerHTML='<li class="muted">No memories yet. Tell ALLEN anything and he’ll file it.</li>'; return; }
+  const lanes={}; mems.forEach(m=>{ const l=m.lane||'personal'; (lanes[l]=lanes[l]||[]).push(m); });
+  const order=['business','personal'].concat(Object.keys(lanes).filter(l=>l!=='business'&&l!=='personal'));
+  order.forEach(lane=>{ const items=lanes[lane]; if(!items||!items.length) return;
+    const h=document.createElement('li'); h.className='lane-head'; h.textContent=lane==='business'?'💼 Business':(lane==='personal'?'🏡 Personal':lane); ul.appendChild(h);
+    items.forEach(m=>{ const li=document.createElement('li');
+      const wrap=document.createElement('span'); wrap.style.minWidth='0';
+      if(m.silo){ const b=document.createElement('span'); b.className='silo'; b.textContent=m.silo; wrap.appendChild(b); }
+      wrap.appendChild(document.createTextNode(' '+m.content)); li.appendChild(wrap);
+      const x=document.createElement('button'); x.className='x'; x.textContent='✕'; x.onclick=async()=>{ await api('/console/memory/'+m.id,{method:'DELETE'}); loadMem(); }; li.appendChild(x);
+      ul.appendChild(li); });
+  });
+ }catch(e){} }
 
 // wires
 $('#f').addEventListener('submit',e=>{e.preventDefault();send($('#msg').value);});

@@ -60,7 +60,10 @@ def init_db() -> None:
                 source text NOT NULL DEFAULT 'user',
                 created_at timestamptz DEFAULT now()
             );
+            ALTER TABLE memories ADD COLUMN IF NOT EXISTS lane text;
+            ALTER TABLE memories ADD COLUMN IF NOT EXISTS silo text;
             CREATE INDEX IF NOT EXISTS memories_ns_idx ON memories (namespace);
+            CREATE INDEX IF NOT EXISTS memories_lane_silo_idx ON memories (namespace, lane, silo);
             """
         )
 
@@ -108,24 +111,32 @@ def create_project(name: str, namespace: str) -> dict:
     return {**row, "api_key": key}
 
 
-# ---- namespaced memory ----
+# ---- namespaced memory (lane = business|personal, silo = granular topic) ----
 def list_memories(namespace: str) -> list[dict]:
     with _cursor() as cur:
         cur.execute(
-            "SELECT id, namespace, brand, content, source, created_at FROM memories "
+            "SELECT id, namespace, brand, content, source, lane, silo, created_at FROM memories "
             "WHERE namespace = %s ORDER BY created_at DESC",
             (namespace,),
         )
         return list(cur.fetchall())
 
 
-def add_memory(namespace: str, content: str, brand: Optional[str] = None, source: str = "user") -> dict:
+def add_memory(
+    namespace: str,
+    content: str,
+    lane: Optional[str] = None,
+    silo: Optional[str] = None,
+    brand: Optional[str] = None,
+    source: str = "user",
+) -> dict:
     mid = f"mem-{int(time.time() * 1000)}-{secrets.randbelow(10000)}"
     with _cursor() as cur:
         cur.execute(
-            "INSERT INTO memories (id, namespace, brand, content, source) VALUES (%s, %s, %s, %s, %s) "
-            "RETURNING id, namespace, brand, content, source, created_at",
-            (mid, namespace, brand, content, source),
+            "INSERT INTO memories (id, namespace, brand, content, source, lane, silo) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s) "
+            "RETURNING id, namespace, brand, content, source, lane, silo, created_at",
+            (mid, namespace, brand, content, source, lane, silo),
         )
         return cur.fetchone()
 

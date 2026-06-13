@@ -6,7 +6,9 @@ import base64
 import hashlib
 import hmac
 import json
+import re
 import time
+from collections import OrderedDict
 from pathlib import Path
 from typing import Optional
 
@@ -15,7 +17,7 @@ from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFil
 from fastapi.responses import HTMLResponse
 from fastapi.responses import Response as RawResponse
 
-from . import chat, db, speech
+from . import chat, classify, db, speech
 from .config import settings
 
 router = APIRouter()
@@ -58,6 +60,59 @@ def _session_user(request: Request) -> dict:
     if not data:
         raise HTTPException(401, "login required")
     return data
+
+
+def _memory_context(namespace: str) -> Optional[str]:
+    """Memories grouped by lane → silo (with ids) so ALLEN can use the lane relevant to the topic."""
+    if not db.db_ready():
+        return None
+    mems = db.list_memories(namespace)
+    if not mems:
+        return None
+    lanes: "OrderedDict[str, OrderedDict[str, list]]" = OrderedDict()
+    for m in mems:
+        lane = (m.get("lane") or "personal").upper()
+        silo = m.get("silo") or "general"
+        lanes.setdefault(lane, OrderedDict()).setdefault(silo, []).append(m)
+    out = ["What you remember about Rahm — use the lane and silo relevant to what he's talking about:"]
+    for lane, silos in lanes.items():
+        out.append(lane)
+        for silo, items in silos.items():
+            for m in items:
+                out.append(f"  [{silo} | id:{m['id']}] {m['content']}")
+    return "\n".join(out)
+
+
+_MEM_RE = re.compile(r"@@MEMORY\s*(\{[\s\S]*?\})\s*@@")
+
+
+def _apply_memory_ops(namespace: str, reply: str) -> tuple[str, bool]:
+    """Parse ALLEN's @@MEMORY ops out of a reply, classify adds into lane/silo, apply, and strip."""
+    cleaned = re.sub(r"@@MEMORY[\s\S]*?@@", "", reply).strip()
+    m = _MEM_RE.search(reply)
+    if not m:
+        return reply.strip(), False
+    try:
+        ops = json.loads(m.group(1)).get("ops", [])
+    except Exception:
+        return cleaned, False
+    changed = False
+    for o in ops:
+        try:
+            op = o.get("op")
+            if op == "add" and (o.get("content") or "").strip():
+                cls = classify.classify_memory(o["content"])
+                db.add_memory(namespace, o["content"].strip(), cls["lane"], cls["silo"], source="allen")
+                changed = True
+            elif op == "update" and o.get("id") and (o.get("content") or "").strip():
+                db.update_memory(namespace, o["id"], o["content"].strip())
+                changed = True
+            elif op == "delete" and o.get("id"):
+                db.delete_memory(namespace, o["id"])
+                changed = True
+        except Exception:
+            continue
+    return cleaned, changed
 
 
 # ---- the page ----
@@ -114,22 +169,17 @@ def console_chat(body: dict, request: Request) -> dict:
     ns = user["namespace"]
     if not settings.llm_ready:
         raise HTTPException(503, "LLM not configured")
-    context = None
-    if db.db_ready():
-        mems = db.list_memories(ns)
-        if mems:
-            context = "Saved memories (things to remember):\n" + "\n".join(
-                f"- {m['content']}" for m in mems[:40]
-            )
-    reply = chat.respond(
+    context = _memory_context(ns)
+    raw = chat.respond(
         (body or {}).get("message", ""),
         (body or {}).get("brand"),
         None,
         (body or {}).get("history", []),
-        600,
+        700,
         context,
     )
-    return {"reply": reply}
+    reply, changed = _apply_memory_ops(ns, raw)
+    return {"reply": reply, "memoryChanged": changed}
 
 
 @router.post("/console/speak")
@@ -164,7 +214,13 @@ def console_add_memory(body: dict, request: Request) -> dict:
     content = ((body or {}).get("content") or "").strip()
     if not content:
         raise HTTPException(400, "content required")
-    return db.add_memory(user["namespace"], content, (body or {}).get("brand"))
+    # Honour an explicit lane/silo, else let ALLEN classify it.
+    lane = (body or {}).get("lane")
+    silo = (body or {}).get("silo")
+    if not lane:
+        cls = classify.classify_memory(content)
+        lane, silo = cls["lane"], cls["silo"]
+    return db.add_memory(user["namespace"], content, lane, silo)
 
 
 @router.delete("/console/memory/{mem_id}")
