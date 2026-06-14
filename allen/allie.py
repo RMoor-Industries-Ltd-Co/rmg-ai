@@ -83,7 +83,7 @@ def run(task: str, namespace: str) -> str:
         if name.startswith("clickup_"):
             return tools_clickup.handle(name, inp, business_only=True)
         if name.startswith("notion_"):
-            return tools_notion.handle(name, inp)
+            return tools_notion.handle(name, inp, business_only=True)
         return f"(unknown tool: {name})"
 
     messages = [{"role": "user", "content": f"Task from ALLEN: {task}"}]

@@ -50,16 +50,18 @@ def _title_of(obj: dict) -> str:
     return "(untitled)"
 
 
-def _search(query: str) -> str:
-    r = requests.post(f"{BASE}/search", headers=_h(), json={"query": query, "page_size": 10}, timeout=30)
+def _search(query: str, business_only: bool = False) -> str:
+    r = requests.post(f"{BASE}/search", headers=_h(), json={"query": query, "page_size": 12}, timeout=30)
     r.raise_for_status()
     results = r.json().get("results", [])
-    if not results:
-        return "No Notion pages matched."
     lines = []
     for o in results:
-        lines.append(f"- {_title_of(o)} [{o.get('object')}] (id {o.get('id')})")
-    return "\n".join(lines)
+        title = _title_of(o)
+        # ALLIE is scoped to RMG/RMI — keep her out of the separate AMG (Cappo) system
+        if business_only and "amg" in title.lower():
+            continue
+        lines.append(f"- {title} [{o.get('object')}] (id {o.get('id')})")
+    return "\n".join(lines) or "No Notion pages matched (within your scope)."
 
 
 def _rich(block: dict) -> str:
@@ -100,13 +102,13 @@ def _get_page(page_id: str) -> str:
     return f"# {title}\n\n{body or '(empty page)'}"
 
 
-def handle(name: str, args: dict) -> str:
+def handle(name: str, args: dict, business_only: bool = False) -> str:
     if not settings.notion_ready:
         return "Notion is not configured."
     args = args or {}
     try:
         if name == "notion_search":
-            return _search(args["query"])
+            return _search(args["query"], business_only=business_only)
         if name == "notion_get_page":
             return _get_page(args["page_id"])
     except requests.HTTPError as e:
