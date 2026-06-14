@@ -31,7 +31,20 @@ class Settings(BaseSettings):
     gdrive_refresh_token: str = ""
     gdrive_scripts_folder_id: str = ""
 
+    # Operational data sources for ALLIE (project mgmt + knowledge base)
+    clickup_api_token: str = ""
+    clickup_team_id: str = ""
+    notion_api_key: str = ""
+
     port: int = 8090
+
+    @property
+    def clickup_ready(self) -> bool:
+        return bool(self.clickup_api_token)
+
+    @property
+    def notion_ready(self) -> bool:
+        return bool(self.notion_api_key)
 
     @property
     def llm_ready(self) -> bool:

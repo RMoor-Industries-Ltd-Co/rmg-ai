@@ -37,13 +37,16 @@ ALLEN_TOOLS = [
 ]
 
 _DELEGATION_NOTE = (
-    "\n\nYOU HAVE ALLIE — your Director of Operations, an agentic engine working under you across RMG and "
-    "RMI. Rahm speaks ONLY to you and never sees ALLIE. When his request needs operational legwork — "
-    "research, looking things up, gathering/organizing facts or data, project tracking, or records work — "
-    "DELEGATE it to ALLIE with the delegate_to_allie tool, then weave her findings into your own spoken "
-    "answer. Pass her only the business context she needs, never Rahm's personal/private details. For "
-    "quick conversational or personal replies, just answer yourself. NEVER mention the tool, ALLIE's "
-    "mechanics, or that you delegated — to Rahm it is simply you, getting it done."
+    "\n\nYOUR REACH — Rahm speaks ONLY to you; he never sees the machinery. You have:\n"
+    "• ALLIE, your agentic Director of Operations (delegate_to_allie). DELEGATE to her any deeper BUSINESS "
+    "legwork across RMG/RMI — research, organizing facts/data, multi-step project or records work. Pass her "
+    "only the business context she needs, never Rahm's personal details.\n"
+    "• Direct read access to ClickUp (his project framework) and Notion (his knowledge base) when configured. "
+    "Use these YOURSELF for quick, single lookups and for anything PERSONAL (e.g. his PERSONAL SYSTEMS "
+    "appointments/health lists) — that personal layer is yours, not ALLIE's.\n"
+    "Rule of thumb: quick or personal → look it up yourself; deeper business research/organization → "
+    "delegate to ALLIE. Either way, answer Rahm in your own natural spoken voice. NEVER mention tools, "
+    "ALLIE, ClickUp/Notion mechanics, or that you delegated — to Rahm it is simply you, getting it done."
 )
 
 
@@ -54,12 +57,25 @@ def respond_agentic(
     namespace: str,
     max_tokens: int = 900,
 ) -> str:
+    from . import tools_clickup, tools_notion
+    from .config import settings
+
+    tools = list(ALLEN_TOOLS)
+    if settings.clickup_ready:
+        tools += tools_clickup.TOOLS
+    if settings.notion_ready:
+        tools += tools_notion.TOOLS
+
     system = chat.build_system(None, None, context) + _DELEGATION_NOTE
     messages = [{"role": "user", "content": chat.build_user(message, history)}]
 
     def runner(name: str, inp: dict) -> str:
         if name == "delegate_to_allie":
             return allie.run((inp or {}).get("task", ""), namespace)
+        if name.startswith("clickup_"):
+            return tools_clickup.handle(name, inp, business_only=False)  # ALLEN sees all spaces
+        if name.startswith("notion_"):
+            return tools_notion.handle(name, inp)
         return f"(unknown tool: {name})"
 
-    return get_llm().run_agent(system, messages, ALLEN_TOOLS, runner, max_rounds=5, max_tokens=max_tokens)
+    return get_llm().run_agent(system, messages, tools, runner, max_rounds=6, max_tokens=max_tokens)

@@ -29,27 +29,62 @@ _SYSTEM = (
 )
 
 
-def respond(
-    message: str,
-    history: Optional[list[dict]] = None,
-    context: Optional[str] = None,
-    max_tokens: int = 900,
-) -> str:
+def _build_system(context: Optional[str]) -> str:
     system = _SYSTEM
     if context:
         system += (
             "\n\nWHAT YOU KNOW (ALLEN's business knowledge — RMG, RMI, brands, projects; treat as ground "
             "truth, and never invent beyond it):\n" + context[:9000]
         )
+    return system
+
+
+def respond(
+    message: str,
+    history: Optional[list[dict]] = None,
+    context: Optional[str] = None,
+    max_tokens: int = 900,
+) -> str:
     convo = ""
     for m in (history or [])[-8:]:
         role = "ALLIE" if m.get("role") == "assistant" else "Rahm"
         convo += f"{role}: {m.get('content', '')}\n"
     user = (convo + f"Rahm: {message}\nALLIE:").strip()
-    return get_llm().complete(system=system, user=user, max_tokens=max_tokens)
+    return get_llm().complete(system=_build_system(context), user=user, max_tokens=max_tokens)
 
 
 def run(task: str, namespace: str) -> str:
-    """Delegation entrypoint — ALLEN hands ALLIE a task; she works it over her business context
-    (and, once wired, her ClickUp/Notion tools) and returns findings for ALLEN to synthesize."""
-    return respond(task, history=[], context=memory.allie_context(namespace), max_tokens=1200)
+    """Delegation entrypoint — ALLEN hands ALLIE a task. She works it AGENTICALLY: pulling live data
+    from ClickUp (projects) and Notion (knowledge base) before answering, scoped to the business
+    spaces, then returns organized findings for ALLEN to synthesize."""
+    from . import tools_clickup, tools_notion
+    from .config import settings
+
+    context = memory.allie_context(namespace)
+    tools: list = []
+    if settings.clickup_ready:
+        tools += tools_clickup.TOOLS
+    if settings.notion_ready:
+        tools += tools_notion.TOOLS
+    if not tools:  # no live sources configured — reason over memory
+        return respond(task, history=[], context=context, max_tokens=1200)
+
+    system = _build_system(context) + (
+        "\n\nLIVE TOOLS — you can read Rahm's real operational systems before answering, and you should:\n"
+        "• ClickUp (the project/task framework): clickup_hierarchy to find lists, then clickup_list_tasks "
+        "and clickup_get_task.\n"
+        "• Notion (the knowledge base / 'bank of wisdom'): notion_search, then notion_get_page.\n"
+        "Pull REAL data — never guess names, tasks, dates, or facts you can look up. You are scoped to the "
+        "BUSINESS spaces (RMG, RMI); personal/AMG are out of bounds. When finished, hand ALLEN a tight, "
+        "organized findings summary (with the concrete facts) that he can relay to Rahm."
+    )
+
+    def runner(name: str, inp: dict) -> str:
+        if name.startswith("clickup_"):
+            return tools_clickup.handle(name, inp, business_only=True)
+        if name.startswith("notion_"):
+            return tools_notion.handle(name, inp)
+        return f"(unknown tool: {name})"
+
+    messages = [{"role": "user", "content": f"Task from ALLEN: {task}"}]
+    return get_llm().run_agent(system, messages, tools, runner, max_rounds=7, max_tokens=1300)
