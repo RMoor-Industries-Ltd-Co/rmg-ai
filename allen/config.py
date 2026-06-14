@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     google_oauth_client_secret: str = ""
     google_calendar_refresh_token: str = ""
     google_calendar_id: str = "primary"
+    google_oauth_redirect: str = "https://allen.i.verse.rmasters.group/oauth/calendar/callback"
 
     port: int = 8090
 

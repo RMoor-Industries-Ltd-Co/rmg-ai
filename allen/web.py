@@ -13,11 +13,13 @@ from pathlib import Path
 from typing import Optional
 
 import requests
+from urllib.parse import urlencode
+
 from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.responses import Response as RawResponse
 
-from . import agent, classify, db, media, memory, speech
+from . import agent, classify, db, media, memory, speech, tools_calendar
 from .config import settings
 
 router = APIRouter()
@@ -149,6 +151,46 @@ def auth_me(request: Request) -> dict:
 def auth_logout(response: Response) -> dict:
     response.delete_cookie(SESSION_COOKIE, path="/")
     return {"ok": True}
+
+
+# ---- one-time Google Calendar authorization (gives ALLEN calendar CRUD) ----
+@router.get("/oauth/calendar/start")
+def calendar_start(request: Request):
+    _session_user(request)
+    params = {
+        "client_id": settings.google_oauth_client_id,
+        "redirect_uri": settings.google_oauth_redirect,
+        "response_type": "code",
+        "scope": "https://www.googleapis.com/auth/calendar",
+        "access_type": "offline",
+        "prompt": "consent",
+    }
+    return RedirectResponse("https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params))
+
+
+@router.get("/oauth/calendar/callback", response_class=HTMLResponse)
+def calendar_callback(request: Request, code: str = "", error: str = "") -> str:
+    _session_user(request)
+    if error or not code:
+        return f"<h3>Calendar authorization failed: {error or 'no code returned'}</h3>"
+    r = requests.post(
+        "https://oauth2.googleapis.com/token",
+        data={
+            "client_id": settings.google_oauth_client_id,
+            "client_secret": settings.google_oauth_client_secret,
+            "code": code,
+            "redirect_uri": settings.google_oauth_redirect,
+            "grant_type": "authorization_code",
+        },
+        timeout=30,
+    )
+    if not r.ok:
+        return f"<h3>Token exchange failed: {r.text[:300]}</h3>"
+    rt = r.json().get("refresh_token")
+    if not rt:
+        return "<h3>No refresh token returned. Revoke ALLEN's access in your Google account and retry.</h3>"
+    db.set_config("google_calendar_refresh_token", rt)
+    return "<h3>✅ Calendar connected. ALLEN can now manage your calendar. You can close this tab.</h3>"
 
 
 # ---- console (session-gated; namespace comes from the session) ----

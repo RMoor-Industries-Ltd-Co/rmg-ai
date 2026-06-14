@@ -103,7 +103,31 @@ def init_db() -> None:
                 created_at timestamptz DEFAULT now()
             );
             CREATE INDEX IF NOT EXISTS inspirations_ns_idx ON inspirations (namespace);
+
+            CREATE TABLE IF NOT EXISTS app_config (
+                key text PRIMARY KEY,
+                value text,
+                updated_at timestamptz DEFAULT now()
+            );
             """
+        )
+
+
+def get_config(key: str) -> Optional[str]:
+    if not db_ready():
+        return None
+    with _cursor() as cur:
+        cur.execute("SELECT value FROM app_config WHERE key = %s", (key,))
+        row = cur.fetchone()
+        return row["value"] if row else None
+
+
+def set_config(key: str, value: str) -> None:
+    with _cursor() as cur:
+        cur.execute(
+            "INSERT INTO app_config (key, value) VALUES (%s, %s) "
+            "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()",
+            (key, value),
         )
 
 

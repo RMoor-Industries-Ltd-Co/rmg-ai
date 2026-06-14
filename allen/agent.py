@@ -59,7 +59,7 @@ def respond_agentic(
     namespace: str,
     max_tokens: int = 900,
 ) -> str:
-    from . import tools_clickup, tools_notion
+    from . import tools_calendar, tools_clickup, tools_notion
     from .config import settings
 
     tools = list(ALLEN_TOOLS)
@@ -67,6 +67,8 @@ def respond_agentic(
         tools += tools_clickup.TOOLS + tools_clickup.WRITE_TOOLS  # full CRUD on Rahm's PERSONAL spaces
     if settings.notion_ready:
         tools += tools_notion.TOOLS
+    if tools_calendar.ready():
+        tools += tools_calendar.TOOLS  # ALLEN manages Rahm's personal calendar
 
     system = chat.build_system(None, None, context) + _DELEGATION_NOTE
     messages = [{"role": "user", "content": chat.build_user(message, history)}]
@@ -78,6 +80,8 @@ def respond_agentic(
             return tools_clickup.handle(name, inp, scope="personal")  # ALLEN direct = personal systems only
         if name.startswith("notion_"):
             return tools_notion.handle(name, inp)  # ALLEN sees all Notion (overseer)
+        if name.startswith("calendar_"):
+            return tools_calendar.handle(name, inp)
         return f"(unknown tool: {name})"
 
     return get_llm().run_agent(system, messages, tools, runner, max_rounds=6, max_tokens=max_tokens)
