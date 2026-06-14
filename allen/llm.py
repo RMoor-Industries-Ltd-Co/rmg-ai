@@ -9,6 +9,8 @@ from .config import settings
 class LLMProvider(Protocol):
     def complete(self, system: str, user: str, max_tokens: int = 2000) -> str: ...
 
+    def complete_blocks(self, system: str, content: list, max_tokens: int = 2000) -> str: ...
+
 
 class ClaudeProvider:
     def __init__(self) -> None:
@@ -23,6 +25,17 @@ class ClaudeProvider:
             max_tokens=max_tokens,
             system=system,
             messages=[{"role": "user", "content": user}],
+        )
+        return "".join(block.text for block in msg.content if block.type == "text").strip()
+
+    def complete_blocks(self, system: str, content: list, max_tokens: int = 2000) -> str:
+        """Multimodal turn — `content` is a list of Anthropic content blocks (text + image +
+        document), so ALLEN can SEE images/PDFs/video frames, not just read text about them."""
+        msg = self._client.messages.create(
+            model=self.model,
+            max_tokens=max_tokens,
+            system=system,
+            messages=[{"role": "user", "content": content}],
         )
         return "".join(block.text for block in msg.content if block.type == "text").strip()
 

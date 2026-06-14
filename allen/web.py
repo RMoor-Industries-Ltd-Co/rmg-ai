@@ -13,11 +13,11 @@ from pathlib import Path
 from typing import Optional
 
 import requests
-from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse
 from fastapi.responses import Response as RawResponse
 
-from . import chat, classify, db, speech
+from . import chat, classify, db, media, speech
 from .config import settings
 
 router = APIRouter()
@@ -296,6 +296,38 @@ async def console_listen(request: Request, file: UploadFile = File(...)) -> dict
         raise HTTPException(503, "STT not configured")
     audio = await file.read()
     return {"text": speech.transcribe(audio, file.filename or "audio.webm")}
+
+
+@router.post("/console/attach")
+async def console_attach(
+    request: Request,
+    file: UploadFile = File(...),
+    message: str = Form(""),
+    conversationId: str = Form(None),
+) -> dict:
+    """Rahm shares a file (image, photo, PDF, doc, audio, video). ALLEN reads/sees/hears it and
+    returns his interpretation; the exchange is saved into the conversation like any other turn."""
+    user = _session_user(request)
+    ns = user["namespace"]
+    if not settings.llm_ready:
+        raise HTTPException(503, "LLM not configured")
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "empty file")
+    fname = file.filename or "file"
+    result = media.analyze(data, fname, (message or "").strip() or None)
+    reply = result["analysis"]
+
+    conv_id = conversationId
+    title = None
+    if db.db_ready():
+        if not (conv_id and db.get_conversation(ns, conv_id)):
+            title = (message.strip() or f"Shared {fname}")[:48]
+            conv_id = db.create_conversation(ns, "General", title)["id"]
+        shared = f"📎 {fname}" + (f" — {message.strip()}" if message.strip() else "")
+        db.add_message(conv_id, "user", shared)
+        db.add_message(conv_id, "assistant", reply)
+    return {"reply": reply, "kind": result["kind"], "filename": fname, "conversationId": conv_id, "title": title}
 
 
 @router.get("/console/memory")

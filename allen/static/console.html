@@ -16,7 +16,8 @@
   .brand { font-weight:800; letter-spacing:.14em; font-size:15px; background:linear-gradient(135deg,var(--gold2),var(--gold)); -webkit-background-clip:text; background-clip:text; color:transparent; }
   header .sub { color:var(--muted); font-size:11px; margin-left:2px; }
   header .spacer { flex:1; }
-  .icon-btn { background:transparent; border:1px solid var(--line); color:var(--muted); border-radius:9px; padding:7px 11px; font-size:14px; cursor:pointer; }
+  .icon-btn { background:transparent; border:1px solid var(--line); color:var(--muted); border-radius:11px; padding:0 12px; font-size:16px; line-height:1; cursor:pointer; min-height:44px; display:inline-flex; align-items:center; justify-content:center; }
+  header .icon-btn { font-size:26px; min-width:50px; padding:0; }
   .icon-btn:hover { color:var(--gold); border-color:var(--gold); }
   /* login */
   #login { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; padding:24px; text-align:center; }
@@ -49,7 +50,7 @@
   /* input bar */
   form { display:flex; gap:8px; padding:10px 12px; padding-bottom:max(10px,env(safe-area-inset-bottom)); border-top:1px solid var(--line); background:var(--bg); }
   form input[type=text] { flex:1; background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:12px; padding:13px 14px; font-size:16px; }
-  .send, .mic { flex:none; border-radius:12px; border:1px solid var(--line); background:var(--panel); color:var(--text); font-size:17px; padding:0 16px; cursor:pointer; }
+  .send, .mic, .attach { flex:none; border-radius:12px; border:1px solid var(--line); background:var(--panel); color:var(--text); font-size:23px; min-width:54px; min-height:52px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; }
   .send { background:linear-gradient(135deg,var(--gold2),var(--gold)); color:#1a1206; font-weight:700; border:none; }
   .mic.rec { background:#3a1d1d; border-color:#c0392b; color:#ff6b6b; animation:pulse 1.2s infinite; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.55} }
@@ -121,9 +122,11 @@
   </div>
   <p class="err" id="err"></p>
   <form id="f">
+    <button type="button" class="attach" id="attachBtn" title="Attach a file — image, photo, PDF, doc, audio or video">📎</button>
+    <input type="file" id="fileIn" accept="image/*,application/pdf,.doc,.docx,.txt,.md,.csv,.json,audio/*,video/*" style="display:none" />
     <button type="button" class="mic" id="mic" title="Talk">🎙️</button>
     <input type="text" id="msg" placeholder="Ask ALLEN…" autocomplete="off" />
-    <button type="submit" class="send">↑</button>
+    <button type="submit" class="send" title="Send">↑</button>
   </form>
 </div>
 
@@ -264,6 +267,25 @@ async function send(text){
   } catch(e){ thinking.remove(); if(e.message!=='login') $('#err').textContent=String(e); }
 }
 
+// attach -> ALLEN reads/sees/hears the file -> interpretation
+async function uploadFile(file){
+  if(!file) return;
+  const note=$('#msg').value.trim(); $('#msg').value=''; $('#err').textContent='';
+  add('user','📎 '+file.name+(note?(' — '+note):''));
+  const thinking=add('allen','Looking at '+file.name+'…');
+  try{
+    const wasNew=!convId;
+    const fd=new FormData(); fd.append('file',file,file.name); fd.append('message',note);
+    if(convId) fd.append('conversationId',convId);
+    const r=await api('/console/attach',{method:'POST',body:fd});
+    const d=await r.json(); thinking.querySelector('div:last-child').textContent=d.reply||'(no reply)';
+    turns.push({role:'user',content:'[shared '+file.name+'] '+note}); turns.push({role:'assistant',content:d.reply});
+    if(d.conversationId) convId=d.conversationId;
+    if(autoSpeak && d.reply) speak(d.reply);
+    if(wasNew) loadConvs();
+  }catch(e){ thinking.remove(); if(e.message!=='login') $('#err').textContent='Could not analyze that file.'; }
+}
+
 // mic -> transcribe -> auto-send
 async function toggleMic(){
   if(recorder){ recorder.stop(); return; }
@@ -307,6 +329,8 @@ async function loadMem(){ try{ const r=await api('/console/memory'); const d=awa
 // wires
 $('#f').addEventListener('submit',e=>{e.preventDefault();send($('#msg').value);});
 $('#mic').addEventListener('click',toggleMic);
+$('#attachBtn').addEventListener('click',()=>$('#fileIn').click());
+$('#fileIn').addEventListener('change',e=>{ const f=e.target.files[0]; e.target.value=''; uploadFile(f); });
 $('#convBtn').addEventListener('click',()=>{ $('#convs').classList.add('open'); loadConvs(); });
 $('#convs').addEventListener('click',e=>{ if(e.target.id==='convs') $('#convs').classList.remove('open'); });
 $('#newConv').addEventListener('click',()=>newChat('General'));
