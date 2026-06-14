@@ -315,7 +315,7 @@ async def console_attach(
     if not data:
         raise HTTPException(400, "empty file")
     fname = file.filename or "file"
-    result = media.analyze(data, fname, (message or "").strip() or None)
+    result = media.analyze(data, fname, (message or "").strip() or None, context=_memory_context(ns))
     reply = result["analysis"]
 
     conv_id = conversationId

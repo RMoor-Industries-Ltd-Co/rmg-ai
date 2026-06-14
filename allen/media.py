@@ -115,9 +115,13 @@ def _extract_text(data: bytes, ext: str) -> str:
         return ""
 
 
-def analyze(data: bytes, filename: str, note: str | None = None) -> dict:
-    """Route a shared file to the right modality and return ALLEN's interpretation."""
+def analyze(data: bytes, filename: str, note: str | None = None, context: str | None = None) -> dict:
+    """Route a shared file to the right modality and return ALLEN's interpretation.
+    `context` (ALLEN's memories) grounds the analysis in what he knows about Rahm's worlds."""
     ext = _ext(filename)
+    system = _SYSTEM
+    if context:
+        system += "\n\nWHAT YOU KNOW (use it — e.g. brand names like COM, VLOG, RMI):\n" + context[:3500]
     ask = (note or "").strip() or "Tell me what this is, what it shows, and anything important."
     blocks: list = []
     kind = "document"
@@ -154,5 +158,5 @@ def analyze(data: bytes, filename: str, note: str | None = None) -> dict:
             return {"kind": kind, "analysis": f"I received '{filename}' but couldn't extract readable text from it. If it's a scanned image, send it as an image and I'll read it visually."}
         blocks = [{"type": "text", "text": f"{ask}\n\nFile name: {filename}\n\nContents:\n{text[:14000]}"}]
 
-    analysis = get_llm().complete_blocks(_SYSTEM, blocks, max_tokens=900)
+    analysis = get_llm().complete_blocks(system, blocks, max_tokens=900)
     return {"kind": kind, "analysis": analysis}
