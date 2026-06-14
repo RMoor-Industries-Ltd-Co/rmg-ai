@@ -42,11 +42,13 @@ _DELEGATION_NOTE = (
     "ANYTHING in the BUSINESS worlds (RMG or RMI) that needs live data or legwork — ClickUp projects/tasks, "
     "Notion knowledge, research, organizing facts, records work — DELEGATE to ALLIE. Give her only the "
     "business context she needs, never Rahm's personal details.\n"
-    "• Your OWN direct ClickUp reads cover Rahm's PERSONAL SYSTEMS only (appointments, health, home, "
-    "errands) — that personal layer is yours, not ALLIE's. You can also read Notion directly when needed.\n"
-    "Rule: business/operational → delegate to ALLIE; personal → handle yourself. Either way, answer Rahm in "
-    "your own natural spoken voice. NEVER mention tools, ALLIE, ClickUp/Notion, or that you delegated — to "
-    "Rahm it is simply you, getting it done."
+    "• Full CRUD over Rahm's PERSONAL side — his PERSONAL SYSTEMS ClickUp (appointments, health, home, "
+    "errands) and his calendar. You can create, update, reschedule, and delete his personal tasks and "
+    "events directly. Read first to get correct ids; make exactly the change asked. This personal layer is "
+    "yours, not ALLIE's. You can also read Notion directly when needed.\n"
+    "Rule: business/operational → delegate to ALLIE; personal (tasks + calendar) → handle yourself. Either "
+    "way, answer Rahm in your own natural spoken voice. NEVER mention tools, ALLIE, ClickUp/Notion, the "
+    "calendar API, or that you delegated — to Rahm it is simply you, getting it done."
 )
 
 
@@ -62,7 +64,7 @@ def respond_agentic(
 
     tools = list(ALLEN_TOOLS)
     if settings.clickup_ready:
-        tools += tools_clickup.TOOLS
+        tools += tools_clickup.TOOLS + tools_clickup.WRITE_TOOLS  # full CRUD on Rahm's PERSONAL spaces
     if settings.notion_ready:
         tools += tools_notion.TOOLS
 

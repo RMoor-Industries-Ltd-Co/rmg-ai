@@ -35,6 +35,14 @@ class Settings(BaseSettings):
     clickup_api_token: str = ""
     clickup_team_id: str = ""
     notion_api_key: str = ""
+    # AMG (Cappo's domain) is its own system; flip on when Cappo matures under ALLIE.
+    allie_amg_enabled: bool = False
+
+    # Google Calendar — ALLEN's personal calendar CRUD (OAuth refresh token).
+    google_oauth_client_id: str = ""
+    google_oauth_client_secret: str = ""
+    google_calendar_refresh_token: str = ""
+    google_calendar_id: str = "primary"
 
     port: int = 8090
 
@@ -45,6 +53,12 @@ class Settings(BaseSettings):
     @property
     def notion_ready(self) -> bool:
         return bool(self.notion_api_key)
+
+    @property
+    def calendar_ready(self) -> bool:
+        return bool(
+            self.google_oauth_client_id and self.google_oauth_client_secret and self.google_calendar_refresh_token
+        )
 
     @property
     def llm_ready(self) -> bool:

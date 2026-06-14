@@ -9,7 +9,16 @@ import requests
 from .config import settings
 
 BASE = "https://api.clickup.com/api/v2"
-_PERSONAL_SPACES = ("personal", "amg")  # name fragments ALLIE must not enter
+
+
+def _category(name: str) -> str:
+    """Classify a space: 'personal' (Rahm's life), 'amg' (Cappo's separate system), else 'business'."""
+    n = (name or "").lower()
+    if "personal" in n:
+        return "personal"
+    if "amg" in n:
+        return "amg"
+    return "business"
 
 TOOLS = [
     {
@@ -203,19 +212,23 @@ def _delete_task(args: dict) -> str:
     return f"Deleted task {args['task_id']}."
 
 
-def _is_personal(name: str) -> bool:
-    n = (name or "").lower()
-    return any(p in n for p in _PERSONAL_SPACES)
+def _in_scope(name: str, scope: str) -> bool:
+    cat = _category(name)
+    if scope == "all":
+        return True
+    if scope == "personal":
+        return cat == "personal"
+    if scope == "business":
+        # ALLIE: business spaces; AMG only once enabled (Cappo maturing under her)
+        return cat == "business" or (cat == "amg" and settings.allie_amg_enabled)
+    return False
 
 
 def _hierarchy(scope: str) -> str:
     spaces = _get(f"/team/{settings.clickup_team_id}/space", {"archived": "false"}).get("spaces", [])
     out: list[str] = []
     for s in spaces:
-        personal = _is_personal(s.get("name", ""))
-        if scope == "business" and personal:
-            continue
-        if scope == "personal" and not personal:
+        if not _in_scope(s.get("name", ""), scope):
             continue
         out.append(f"SPACE: {s['name']} (id {s['id']})")
         try:
