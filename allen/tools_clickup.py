@@ -56,11 +56,14 @@ def _is_personal(name: str) -> bool:
     return any(p in n for p in _PERSONAL_SPACES)
 
 
-def _hierarchy(business_only: bool) -> str:
+def _hierarchy(scope: str) -> str:
     spaces = _get(f"/team/{settings.clickup_team_id}/space", {"archived": "false"}).get("spaces", [])
     out: list[str] = []
     for s in spaces:
-        if business_only and _is_personal(s.get("name", "")):
+        personal = _is_personal(s.get("name", ""))
+        if scope == "business" and personal:
+            continue
+        if scope == "personal" and not personal:
             continue
         out.append(f"SPACE: {s['name']} (id {s['id']})")
         try:
@@ -104,13 +107,14 @@ def _get_task(task_id: str) -> str:
     )
 
 
-def handle(name: str, args: dict, business_only: bool = False) -> str:
+def handle(name: str, args: dict, scope: str = "all") -> str:
+    """scope: 'all' | 'business' (RMG/RMI, ALLIE) | 'personal' (PERSONAL SYSTEMS, ALLEN direct)."""
     if not settings.clickup_ready:
         return "ClickUp is not configured."
     args = args or {}
     try:
         if name == "clickup_hierarchy":
-            return _hierarchy(business_only)
+            return _hierarchy(scope)
         if name == "clickup_list_tasks":
             return _list_tasks(args["list_id"], bool(args.get("include_closed")))
         if name == "clickup_get_task":

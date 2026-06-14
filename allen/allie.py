@@ -81,7 +81,7 @@ def run(task: str, namespace: str) -> str:
 
     def runner(name: str, inp: dict) -> str:
         if name.startswith("clickup_"):
-            return tools_clickup.handle(name, inp, business_only=True)
+            return tools_clickup.handle(name, inp, scope="business")
         if name.startswith("notion_"):
             return tools_notion.handle(name, inp, business_only=True)
         return f"(unknown tool: {name})"

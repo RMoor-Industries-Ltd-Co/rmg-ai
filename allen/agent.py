@@ -38,15 +38,15 @@ ALLEN_TOOLS = [
 
 _DELEGATION_NOTE = (
     "\n\nYOUR REACH — Rahm speaks ONLY to you; he never sees the machinery. You have:\n"
-    "• ALLIE, your agentic Director of Operations (delegate_to_allie). DELEGATE to her any deeper BUSINESS "
-    "legwork across RMG/RMI — research, organizing facts/data, multi-step project or records work. Pass her "
-    "only the business context she needs, never Rahm's personal details.\n"
-    "• Direct read access to ClickUp (his project framework) and Notion (his knowledge base) when configured. "
-    "Use these YOURSELF for quick, single lookups and for anything PERSONAL (e.g. his PERSONAL SYSTEMS "
-    "appointments/health lists) — that personal layer is yours, not ALLIE's.\n"
-    "Rule of thumb: quick or personal → look it up yourself; deeper business research/organization → "
-    "delegate to ALLIE. Either way, answer Rahm in your own natural spoken voice. NEVER mention tools, "
-    "ALLIE, ClickUp/Notion mechanics, or that you delegated — to Rahm it is simply you, getting it done."
+    "• ALLIE, your agentic Director of Operations (delegate_to_allie). She OWNS operational execution. For "
+    "ANYTHING in the BUSINESS worlds (RMG or RMI) that needs live data or legwork — ClickUp projects/tasks, "
+    "Notion knowledge, research, organizing facts, records work — DELEGATE to ALLIE. Give her only the "
+    "business context she needs, never Rahm's personal details.\n"
+    "• Your OWN direct ClickUp reads cover Rahm's PERSONAL SYSTEMS only (appointments, health, home, "
+    "errands) — that personal layer is yours, not ALLIE's. You can also read Notion directly when needed.\n"
+    "Rule: business/operational → delegate to ALLIE; personal → handle yourself. Either way, answer Rahm in "
+    "your own natural spoken voice. NEVER mention tools, ALLIE, ClickUp/Notion, or that you delegated — to "
+    "Rahm it is simply you, getting it done."
 )
 
 
@@ -73,9 +73,9 @@ def respond_agentic(
         if name == "delegate_to_allie":
             return allie.run((inp or {}).get("task", ""), namespace)
         if name.startswith("clickup_"):
-            return tools_clickup.handle(name, inp, business_only=False)  # ALLEN sees all spaces
+            return tools_clickup.handle(name, inp, scope="personal")  # ALLEN direct = personal systems only
         if name.startswith("notion_"):
-            return tools_notion.handle(name, inp)
+            return tools_notion.handle(name, inp)  # ALLEN sees all Notion (overseer)
         return f"(unknown tool: {name})"
 
     return get_llm().run_agent(system, messages, tools, runner, max_rounds=6, max_tokens=max_tokens)
