@@ -5,10 +5,22 @@ DELEGATES to ALLIE behind the scenes, then synthesizes her findings into his own
 This wraps chat.build_system/build_user (ALLEN's exact persona) in a tool-use loop whose only tool,
 for now, is delegate_to_allie. As ALLIE gains ClickUp/Notion tools, ALLEN's reach grows for free."""
 
+import json
 from typing import Optional
 
-from . import allie, chat
+from . import allie, chat, db
 from .llm import get_llm
+
+
+def _format_audit(rows: list) -> str:
+    if not rows:
+        return "No recent activity has been logged."
+    lines = []
+    for r in rows:
+        ts = str(r.get("created_at"))[:16]
+        what = (r.get("result") or r.get("detail") or "").replace("\n", " ")[:160]
+        lines.append(f"[{ts}] {r['actor'].upper()} · {r['action']} — {what}")
+    return "\n".join(lines)
 
 ALLEN_TOOLS = [
     {
@@ -33,7 +45,17 @@ ALLEN_TOOLS = [
             },
             "required": ["task"],
         },
-    }
+    },
+    {
+        "name": "review_activity",
+        "description": "Review the recent operational activity log — what you and ALLIE actually CHANGED in "
+                       "ClickUp and the calendar (creates, updates, deletes) and what was delegated. Use when "
+                       "Rahm asks what was done, what changed, or what ALLIE has been up to.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"limit": {"type": "integer", "description": "how many recent entries (default 20)"}},
+        },
+    },
 ]
 
 _DELEGATION_NOTE = (
@@ -85,14 +107,26 @@ def respond_agentic(
     messages = [{"role": "user", "content": chat.build_user(message, history)}]
 
     def runner(name: str, inp: dict) -> str:
+        inp = inp or {}
         if name == "delegate_to_allie":
-            return allie.run((inp or {}).get("task", ""), namespace)
+            task = inp.get("task", "")
+            res = allie.run(task, namespace)
+            db.add_audit(namespace, "allen", "delegate", task, res)
+            return res
+        if name == "review_activity":
+            return _format_audit(db.list_audit(namespace, inp.get("limit", 20)))
         if name.startswith("clickup_"):
-            return tools_clickup.handle(name, inp, scope="personal")  # ALLEN direct = personal systems only
+            res = tools_clickup.handle(name, inp, scope="personal")  # ALLEN direct = personal systems only
+            if name in tools_clickup.WRITE_NAMES:
+                db.add_audit(namespace, "allen", name, json.dumps(inp), res)
+            return res
         if name.startswith("notion_"):
             return tools_notion.handle(name, inp)  # ALLEN sees all Notion (overseer)
         if name.startswith("calendar_"):
-            return tools_calendar.handle(name, inp)
+            res = tools_calendar.handle(name, inp)
+            if name in tools_calendar.WRITE_NAMES:
+                db.add_audit(namespace, "allen", name, json.dumps(inp), res)
+            return res
         return f"(unknown tool: {name})"
 
     return get_llm().run_agent(system, messages, tools, runner, max_rounds=6, max_tokens=max_tokens)

@@ -109,8 +109,47 @@ def init_db() -> None:
                 value text,
                 updated_at timestamptz DEFAULT now()
             );
+
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id text PRIMARY KEY,
+                namespace text NOT NULL,
+                actor text NOT NULL,
+                action text NOT NULL,
+                detail text,
+                result text,
+                created_at timestamptz DEFAULT now()
+            );
+            CREATE INDEX IF NOT EXISTS audit_ns_idx ON audit_log (namespace, created_at DESC);
             """
         )
+
+
+def add_audit(namespace: str, actor: str, action: str, detail: str = "", result: str = "") -> None:
+    """Record an operational write or delegation. Never raises — logging must not break the work."""
+    if not db_ready():
+        return
+    try:
+        aid = f"aud-{int(time.time() * 1000)}-{secrets.randbelow(100000)}"
+        with _cursor() as cur:
+            cur.execute(
+                "INSERT INTO audit_log (id, namespace, actor, action, detail, result) "
+                "VALUES (%s, %s, %s, %s, %s, %s)",
+                (aid, namespace, actor, action, (detail or "")[:1000], (result or "")[:1000]),
+            )
+    except Exception:
+        pass
+
+
+def list_audit(namespace: str, limit: int = 30) -> list[dict]:
+    if not db_ready():
+        return []
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT actor, action, detail, result, created_at FROM audit_log "
+            "WHERE namespace = %s ORDER BY created_at DESC LIMIT %s",
+            (namespace, max(1, min(int(limit or 30), 100))),
+        )
+        return list(cur.fetchall())
 
 
 def get_config(key: str) -> Optional[str]:

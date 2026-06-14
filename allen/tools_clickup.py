@@ -115,6 +115,8 @@ WRITE_TOOLS = [
     },
 ]
 
+WRITE_NAMES = {t["name"] for t in WRITE_TOOLS}  # mutating tools — recorded in the audit log
+
 _PRIORITY = {"urgent": 1, "high": 2, "normal": 3, "low": 4}
 
 

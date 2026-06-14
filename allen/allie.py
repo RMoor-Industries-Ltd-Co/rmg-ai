@@ -4,9 +4,10 @@ Rahm -> ALLEN -> ALLIE. She handles operational research, project management, re
 data, and execution across the BUSINESS worlds (RMG + RMI). By design she is grounded in
 ALLEN's business memory only — never Rahm's personal/sensitive context (the gatekeeper rule)."""
 
+import json
 from typing import Optional
 
-from . import memory
+from . import db, memory
 from .llm import get_llm
 
 _SYSTEM = (
@@ -84,8 +85,12 @@ def run(task: str, namespace: str) -> str:
     )
 
     def runner(name: str, inp: dict) -> str:
+        inp = inp or {}
         if name.startswith("clickup_"):
-            return tools_clickup.handle(name, inp, scope="business")
+            res = tools_clickup.handle(name, inp, scope="business")
+            if name in tools_clickup.WRITE_NAMES:
+                db.add_audit(namespace, "allie", name, json.dumps(inp), res)
+            return res
         if name.startswith("notion_"):
             return tools_notion.handle(name, inp, business_only=True)
         return f"(unknown tool: {name})"

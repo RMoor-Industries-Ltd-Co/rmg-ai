@@ -56,6 +56,9 @@ TOOLS = [
 ]
 
 
+WRITE_NAMES = {"calendar_create_event", "calendar_update_event", "calendar_delete_event"}
+
+
 def refresh_token() -> str | None:
     return db.get_config("google_calendar_refresh_token") or settings.google_calendar_refresh_token or None
 
