@@ -2,6 +2,8 @@
 Read-only: workspace structure, list tasks, read a task. `business_only` scopes ALLIE away from
 the PERSONAL SYSTEMS and AMG spaces (the gatekeeper boundary, enforced at the tool layer)."""
 
+from datetime import datetime, timezone
+
 import requests
 
 from .config import settings
@@ -41,6 +43,72 @@ TOOLS = [
 ]
 
 
+WRITE_TOOLS = [
+    {
+        "name": "clickup_create_task",
+        "description": "Create a new task in a ClickUp list. Provide list_id (from clickup_hierarchy) and name; "
+                       "optionally description, status, due_date (YYYY-MM-DD), priority (urgent|high|normal|low).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "list_id": {"type": "string"}, "name": {"type": "string"},
+                "description": {"type": "string"}, "status": {"type": "string"},
+                "due_date": {"type": "string"}, "priority": {"type": "string"},
+            },
+            "required": ["list_id", "name"],
+        },
+    },
+    {
+        "name": "clickup_update_task",
+        "description": "Update an existing task. Provide task_id and any of: name, description, status, "
+                       "due_date (YYYY-MM-DD), priority (urgent|high|normal|low).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string"}, "name": {"type": "string"},
+                "description": {"type": "string"}, "status": {"type": "string"},
+                "due_date": {"type": "string"}, "priority": {"type": "string"},
+            },
+            "required": ["task_id"],
+        },
+    },
+    {
+        "name": "clickup_comment_task",
+        "description": "Add a comment/note to a task. Provide task_id and comment.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"task_id": {"type": "string"}, "comment": {"type": "string"}},
+            "required": ["task_id", "comment"],
+        },
+    },
+    {
+        "name": "clickup_create_list",
+        "description": "Create a list. Provide name and EITHER folder_id OR space_id (for a folderless list).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"name": {"type": "string"}, "folder_id": {"type": "string"}, "space_id": {"type": "string"}},
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "clickup_create_folder",
+        "description": "Create a folder in a space. Provide space_id and name.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"space_id": {"type": "string"}, "name": {"type": "string"}},
+            "required": ["space_id", "name"],
+        },
+    },
+    {
+        "name": "clickup_delete_task",
+        "description": "Permanently delete a task. Provide task_id. Use carefully — this cannot be undone.",
+        "input_schema": {"type": "object", "properties": {"task_id": {"type": "string"}}, "required": ["task_id"]},
+    },
+]
+
+_PRIORITY = {"urgent": 1, "high": 2, "normal": 3, "low": 4}
+
+
 def _h() -> dict:
     return {"Authorization": settings.clickup_api_token}
 
@@ -49,6 +117,90 @@ def _get(path: str, params: dict | None = None) -> dict:
     r = requests.get(f"{BASE}{path}", headers=_h(), params=params or {}, timeout=30)
     r.raise_for_status()
     return r.json()
+
+
+def _send(method: str, path: str, body: dict) -> dict:
+    r = requests.request(method, f"{BASE}{path}", headers={**_h(), "Content-Type": "application/json"}, json=body, timeout=30)
+    r.raise_for_status()
+    return r.json() if r.text else {}
+
+
+def _to_ms(due) -> int | None:
+    if not due:
+        return None
+    s = str(due).strip()
+    if s.isdigit():
+        return int(s)
+    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d"):
+        try:
+            return int(datetime.strptime(s, fmt).replace(tzinfo=timezone.utc).timestamp() * 1000)
+        except ValueError:
+            continue
+    return None
+
+
+def _prio(p) -> int | None:
+    if p is None or p == "":
+        return None
+    if isinstance(p, str) and p.lower() in _PRIORITY:
+        return _PRIORITY[p.lower()]
+    try:
+        return int(p)
+    except (ValueError, TypeError):
+        return None
+
+
+def _task_body(args: dict) -> dict:
+    body: dict = {}
+    for k in ("name", "description", "status"):
+        if args.get(k):
+            body[k] = args[k]
+    ms = _to_ms(args.get("due_date"))
+    if ms:
+        body["due_date"] = ms
+    pr = _prio(args.get("priority"))
+    if pr:
+        body["priority"] = pr
+    return body
+
+
+def _create_task(args: dict) -> str:
+    body = _task_body(args)
+    t = _send("POST", f"/list/{args['list_id']}/task", body)
+    return f"Created task '{t.get('name')}' (id {t.get('id')}) — {t.get('url','')}"
+
+
+def _update_task(args: dict) -> str:
+    body = _task_body(args)
+    if not body:
+        return "Nothing to update — provide a field (name, status, due_date, priority, description)."
+    _send("PUT", f"/task/{args['task_id']}", body)
+    return f"Updated task {args['task_id']}: " + ", ".join(f"{k}={v}" for k, v in body.items())
+
+
+def _comment_task(args: dict) -> str:
+    _send("POST", f"/task/{args['task_id']}/comment", {"comment_text": args["comment"]})
+    return f"Comment added to task {args['task_id']}."
+
+
+def _create_list(args: dict) -> str:
+    if args.get("folder_id"):
+        lst = _send("POST", f"/folder/{args['folder_id']}/list", {"name": args["name"]})
+    elif args.get("space_id"):
+        lst = _send("POST", f"/space/{args['space_id']}/list", {"name": args["name"]})
+    else:
+        return "Provide folder_id or space_id."
+    return f"Created list '{lst.get('name')}' (id {lst.get('id')})."
+
+
+def _create_folder(args: dict) -> str:
+    f = _send("POST", f"/space/{args['space_id']}/folder", {"name": args["name"]})
+    return f"Created folder '{f.get('name')}' (id {f.get('id')})."
+
+
+def _delete_task(args: dict) -> str:
+    _send("DELETE", f"/task/{args['task_id']}", {})
+    return f"Deleted task {args['task_id']}."
 
 
 def _is_personal(name: str) -> bool:
@@ -119,6 +271,19 @@ def handle(name: str, args: dict, scope: str = "all") -> str:
             return _list_tasks(args["list_id"], bool(args.get("include_closed")))
         if name == "clickup_get_task":
             return _get_task(args["task_id"])
+        # writes
+        if name == "clickup_create_task":
+            return _create_task(args)
+        if name == "clickup_update_task":
+            return _update_task(args)
+        if name == "clickup_comment_task":
+            return _comment_task(args)
+        if name == "clickup_create_list":
+            return _create_list(args)
+        if name == "clickup_create_folder":
+            return _create_folder(args)
+        if name == "clickup_delete_task":
+            return _delete_task(args)
     except requests.HTTPError as e:
         return f"ClickUp API error: {e.response.status_code} {e.response.text[:200]}"
     except Exception as e:

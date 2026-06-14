@@ -63,20 +63,24 @@ def run(task: str, namespace: str) -> str:
     context = memory.allie_context(namespace)
     tools: list = []
     if settings.clickup_ready:
-        tools += tools_clickup.TOOLS
+        tools += tools_clickup.TOOLS + tools_clickup.WRITE_TOOLS
     if settings.notion_ready:
         tools += tools_notion.TOOLS
     if not tools:  # no live sources configured — reason over memory
         return respond(task, history=[], context=context, max_tokens=1200)
 
     system = _build_system(context) + (
-        "\n\nLIVE TOOLS — you can read Rahm's real operational systems before answering, and you should:\n"
-        "• ClickUp (the project/task framework): clickup_hierarchy to find lists, then clickup_list_tasks "
-        "and clickup_get_task.\n"
-        "• Notion (the knowledge base / 'bank of wisdom'): notion_search, then notion_get_page.\n"
-        "Pull REAL data — never guess names, tasks, dates, or facts you can look up. You are scoped to the "
-        "BUSINESS spaces (RMG, RMI); personal/AMG are out of bounds. When finished, hand ALLEN a tight, "
-        "organized findings summary (with the concrete facts) that he can relay to Rahm."
+        "\n\nLIVE TOOLS — you can READ and CHANGE Rahm's real operational systems. You have full autonomy "
+        "to act in the BUSINESS spaces (RMG, RMI); personal/AMG are out of bounds.\n"
+        "• ClickUp READ: clickup_hierarchy to find lists, then clickup_list_tasks and clickup_get_task.\n"
+        "• ClickUp WRITE: clickup_create_task, clickup_update_task (status, due_date YYYY-MM-DD, priority, "
+        "name, description), clickup_comment_task, clickup_create_list, clickup_create_folder, "
+        "clickup_delete_task.\n"
+        "• Notion READ: notion_search, then notion_get_page.\n"
+        "DISCIPLINE: always read first to get the correct ids before you change anything — never write to an "
+        "id you haven't verified. Make exactly the changes the task calls for, nothing extra. Delete only "
+        "when clearly asked. When finished, hand ALLEN a tight summary of what you FOUND and what you CHANGED "
+        "(the concrete facts + ids) so he can relay it to Rahm."
     )
 
     def runner(name: str, inp: dict) -> str:
