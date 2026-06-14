@@ -121,7 +121,10 @@ def analyze(data: bytes, filename: str, note: str | None = None, context: str | 
     ext = _ext(filename)
     system = _SYSTEM
     if context:
-        system += "\n\nWHAT YOU KNOW (use it — e.g. brand names like COM, VLOG, RMI):\n" + context[:3500]
+        system += (
+            "\n\nWHAT YOU KNOW about Rahm's worlds — use these exact definitions (e.g. COM = Conversations "
+            "of Mastery, VLOG = Virtual Legacy of Greatness); never invent a brand meaning:\n" + context[:9000]
+        )
     ask = (note or "").strip() or "Tell me what this is, what it shows, and anything important."
     blocks: list = []
     kind = "document"
