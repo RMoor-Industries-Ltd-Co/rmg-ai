@@ -39,6 +39,31 @@ class ClaudeProvider:
         )
         return "".join(block.text for block in msg.content if block.type == "text").strip()
 
+    def run_agent(self, system, messages, tools, tool_runner, max_rounds=6, max_tokens=1400):
+        """Run a tool-use loop. `tools` = Anthropic tool schemas; `tool_runner(name, input)->str`
+        executes a tool call and returns the result text. Returns the model's final text once it
+        stops calling tools (this is how ALLEN delegates to ALLIE, and ALLIE calls ClickUp/Notion)."""
+        msgs = list(messages)
+        last_text = ""
+        for _ in range(max_rounds):
+            resp = self._client.messages.create(
+                model=self.model, max_tokens=max_tokens, system=system, messages=msgs, tools=tools,
+            )
+            last_text = "".join(b.text for b in resp.content if b.type == "text").strip()
+            if resp.stop_reason != "tool_use":
+                return last_text
+            msgs.append({"role": "assistant", "content": resp.content})
+            results = []
+            for block in resp.content:
+                if block.type == "tool_use":
+                    try:
+                        out = tool_runner(block.name, block.input)
+                    except Exception as exc:  # surface tool failure to the model, don't crash
+                        out = f"(tool '{block.name}' failed: {exc})"
+                    results.append({"type": "tool_result", "tool_use_id": block.id, "content": out or "(no result)"})
+            msgs.append({"role": "user", "content": results})
+        return last_text or "(I worked on that but couldn't finish cleanly — try again.)"
+
 
 _provider: LLMProvider | None = None
 

@@ -9,12 +9,9 @@ from .brands import _PRESETS
 from .llm import get_llm
 
 
-def respond(
-    message: str,
+def build_system(
     brand: Optional[str] = None,
     persona: Optional[str] = None,
-    history: Optional[list[dict]] = None,
-    max_tokens: int = 600,
     context: Optional[str] = None,
 ) -> str:
     b = _PRESETS["brands"].get((brand or "").lower(), {}) if brand else {}
@@ -66,9 +63,25 @@ def respond(
         "the matching @@MEMORY add op(s) in that SAME message. Never claim to have remembered something "
         "without emitting the op — saying it is not enough, the op is what actually saves it."
     )
+    return system
+
+
+def build_user(message: str, history: Optional[list[dict]] = None) -> str:
     convo = ""
     for m in (history or [])[-8:]:
         role = "ALLEN" if m.get("role") == "assistant" else "Rahm"
         convo += f"{role}: {m.get('content', '')}\n"
-    user = (convo + f"Rahm: {message}\nALLEN:").strip()
-    return get_llm().complete(system=system, user=user, max_tokens=max_tokens)
+    return (convo + f"Rahm: {message}\nALLEN:").strip()
+
+
+def respond(
+    message: str,
+    brand: Optional[str] = None,
+    persona: Optional[str] = None,
+    history: Optional[list[dict]] = None,
+    max_tokens: int = 600,
+    context: Optional[str] = None,
+) -> str:
+    return get_llm().complete(
+        system=build_system(brand, persona, context), user=build_user(message, history), max_tokens=max_tokens
+    )

@@ -6,6 +6,7 @@ ALLEN's business memory only — never Rahm's personal/sensitive context (the ga
 
 from typing import Optional
 
+from . import memory
 from .llm import get_llm
 
 _SYSTEM = (
@@ -46,3 +47,9 @@ def respond(
         convo += f"{role}: {m.get('content', '')}\n"
     user = (convo + f"Rahm: {message}\nALLIE:").strip()
     return get_llm().complete(system=system, user=user, max_tokens=max_tokens)
+
+
+def run(task: str, namespace: str) -> str:
+    """Delegation entrypoint — ALLEN hands ALLIE a task; she works it over her business context
+    (and, once wired, her ClickUp/Notion tools) and returns findings for ALLEN to synthesize."""
+    return respond(task, history=[], context=memory.allie_context(namespace), max_tokens=1200)

@@ -17,7 +17,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, Response, Upl
 from fastapi.responses import HTMLResponse
 from fastapi.responses import Response as RawResponse
 
-from . import allie, chat, classify, db, media, speech
+from . import agent, classify, db, media, memory, speech
 from .config import settings
 
 router = APIRouter()
@@ -62,51 +62,9 @@ def _session_user(request: Request) -> dict:
     return data
 
 
-def _format_memories(mems: list) -> Optional[str]:
-    """Render a memory list grouped by lane → silo (with ids). Shared by ALLEN and ALLIE."""
-    if not mems:
-        return None
-    pinned = [m for m in mems if m.get("pinned")]
-    rest = [m for m in mems if not m.get("pinned")]
-    out: list[str] = []
-    if pinned:
-        out.append("CORE PURPOSE & DIRECTIVES — always honor these; they define who you are and what you serve:")
-        for m in pinned:
-            out.append(f"  ★ [id:{m['id']}] {m['content']}")
-        out.append("")
-    if rest:
-        lanes: "OrderedDict[str, OrderedDict[str, list]]" = OrderedDict()
-        for m in rest:
-            lane = (m.get("lane") or "personal").upper()
-            silo = m.get("silo") or "general"
-            lanes.setdefault(lane, OrderedDict()).setdefault(silo, []).append(m)
-        out.append("Known facts about Rahm — use the lane and silo relevant to the topic:")
-        for lane, silos in lanes.items():
-            out.append(lane)
-            for silo, items in silos.items():
-                for m in items:
-                    tags = " | ".join(t for t in [m.get("memory_class"), m.get("unit"), silo] if t)
-                    out.append(f"  [{tags} | id:{m['id']}] {m['content']}")
-    return "\n".join(out)
-
-
 def _memory_context(namespace: str) -> Optional[str]:
-    """ALLEN's full view — everything he remembers, across business and personal."""
-    if not db.db_ready():
-        return None
-    return _format_memories(db.list_memories(namespace))
-
-
-def _allie_memory_context(namespace: str) -> Optional[str]:
-    """ALLIE's view — the GATEKEEPER boundary in code: she sees the core directives and BUSINESS
-    knowledge only, never Rahm's personal lane or any sensitive-class memory."""
-    if not db.db_ready():
-        return None
-    mems = [
-        m for m in db.list_memories(namespace)
-        if m.get("pinned") or (m.get("lane") == "business" and m.get("memory_class") != "sensitive")
-    ]
-    return _format_memories(mems)
+    """ALLEN's full view — everything he remembers (see allen.memory for ALLIE's filtered view)."""
+    return memory.allen_context(namespace)
 
 
 _MEM_RE = re.compile(r"@@MEMORY\s*(\{[\s\S]*?\})\s*@@")
@@ -218,32 +176,12 @@ def console_chat(body: dict, request: Request) -> dict:
     now = (body or {}).get("now")
     if now:
         context = f"Current date and time (Rahm's local): {now}" + (("\n\n" + context) if context else "")
-    raw = chat.respond(msg, None, None, history, 700, context)
+    # ALLEN answers; he may delegate operational legwork to ALLIE behind the scenes (agentic).
+    raw = agent.respond_agentic(msg, history, context, ns, max_tokens=900)
     reply, changed = _apply_memory_ops(ns, raw)
     if db.db_ready() and conv_id:
         db.add_message(conv_id, "assistant", reply)
     return {"reply": reply, "memoryChanged": changed, "conversationId": conv_id, "title": title}
-
-
-@router.post("/console/allie")
-def console_allie(body: dict, request: Request) -> dict:
-    """Talk to ALLIE — Director of Operations. She answers from the gatekeeper-filtered business
-    view (RMG + RMI, no personal/sensitive) and does not write memory (ALLEN is the steward).
-    ALLIE keeps her own in-session history (client-supplied) so ALLEN's personal threads never leak in."""
-    user = _session_user(request)
-    ns = user["namespace"]
-    if not settings.llm_ready:
-        raise HTTPException(503, "LLM not configured")
-    msg = ((body or {}).get("message") or "").strip()
-    if not msg:
-        raise HTTPException(400, "message required")
-    history = (body or {}).get("history", [])
-    context = _allie_memory_context(ns)
-    now = (body or {}).get("now")
-    if now:
-        context = f"Current date and time (Rahm's local): {now}" + (("\n\n" + context) if context else "")
-    reply = allie.respond(msg, history, context, 900)
-    return {"reply": reply, "agent": "allie"}
 
 
 @router.get("/console/conversations")

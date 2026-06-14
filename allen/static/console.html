@@ -96,7 +96,6 @@
   <div class="spacer"></div>
   <button class="icon-btn" id="newChatTop" title="New chat" style="display:none">➕</button>
   <button class="icon-btn" id="convBtn" title="Chats" style="display:none">💬</button>
-  <button class="icon-btn" id="allieBtn" title="Switch to ALLIE (operations & research)" style="display:none;opacity:.5">🩷</button>
   <button class="icon-btn" id="speakToggle" title="Speak replies">🔊</button>
   <button class="icon-btn" id="memBtn" title="Memory" style="display:none">🧠</button>
   <button class="icon-btn" id="outBtn" title="Sign out" style="display:none">⏻</button>
@@ -169,15 +168,14 @@
 <script>
 const $ = s => document.querySelector(s);
 let autoSpeak = true, turns = [], recorder = null, chunks = [], convId = null, pendingFolder = 'General';
-let agent = 'allen', allieTurns = [];
 
 async function api(path, opts={}) {
   const r = await fetch(path, { credentials:'same-origin', ...opts });
   if (r.status === 401) { showLogin(); throw new Error('login'); }
   return r;
 }
-function showLogin(){ $('#login').style.display='flex'; $('#home').style.display='none'; $('#app').style.display='none'; ['newChatTop','convBtn','allieBtn','memBtn','outBtn'].forEach(id=>$('#'+id).style.display='none'); }
-function showApp(email){ $('#login').style.display='none'; ['newChatTop','convBtn','allieBtn','memBtn','outBtn'].forEach(id=>$('#'+id).style.display=''); if(email) $('#outBtn').title='Sign out ('+email+')'; initChats(); showHome(); }
+function showLogin(){ $('#login').style.display='flex'; $('#home').style.display='none'; $('#app').style.display='none'; ['newChatTop','convBtn','memBtn','outBtn'].forEach(id=>$('#'+id).style.display='none'); }
+function showApp(email){ $('#login').style.display='none'; ['newChatTop','convBtn','memBtn','outBtn'].forEach(id=>$('#'+id).style.display=''); if(email) $('#outBtn').title='Sign out ('+email+')'; initChats(); showHome(); }
 function showHome(){ $('#login').style.display='none'; $('#app').style.display='none'; $('#home').style.display='flex'; loadInspiration(); }
 function enterChat(){ $('#login').style.display='none'; $('#home').style.display='none'; $('#app').style.display='flex'; $('#log').scrollTop=$('#log').scrollHeight; }
 
@@ -253,30 +251,9 @@ function add(role, text, who){
 }
 async function speak(text){ try{ const r=await api('/console/speak',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})}); const u=URL.createObjectURL(await r.blob()); const a=$('#audio'); a.src=u; a.play(); }catch(e){} }
 
-function setAgent(a){
-  agent=a; const on=a==='allie';
-  $('#allieBtn').style.opacity=on?'1':'.5';
-  $('#allieBtn').title=on?'ALLIE active — tap to return to ALLEN':'Switch to ALLIE (operations & research)';
-  $('#msg').placeholder=on?'Ask ALLIE — research, projects, records…':'Ask ALLEN…';
-  add('allen', on?'ALLIE here — your Director of Operations. I cover RMG & RMI research, projects, records and data. Your personal world stays with ALLEN.':'Back to ALLEN.', on?'ALLIE':'ALLEN');
-}
-
-async function sendAllie(m){
-  const hist=allieTurns.slice(-8); allieTurns.push({role:'user',content:m});
-  const thinking=add('allen','…','ALLIE');
-  try{
-    const r=await api('/console/allie',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:m,history:hist,now:new Date().toString()})});
-    const d=await r.json(); thinking.querySelector('div:last-child').textContent=d.reply||'(no reply)';
-    allieTurns.push({role:'assistant',content:d.reply});
-    if(autoSpeak && d.reply) speak(d.reply);
-  }catch(e){ thinking.remove(); if(e.message!=='login') $('#err').textContent=String(e); }
-}
-
 async function send(text){
   const m=text.trim(); if(!m) return; $('#msg').value=''; $('#err').textContent='';
-  add('user',m);
-  if(agent==='allie'){ return sendAllie(m); }
-  const hist=turns.slice(-8); turns.push({role:'user',content:m});
+  add('user',m); const hist=turns.slice(-8); turns.push({role:'user',content:m});
   const thinking=add('allen','…');
   try {
     const wasNew=!convId;
@@ -354,7 +331,6 @@ $('#f').addEventListener('submit',e=>{e.preventDefault();send($('#msg').value);}
 $('#mic').addEventListener('click',toggleMic);
 $('#attachBtn').addEventListener('click',()=>$('#fileIn').click());
 $('#fileIn').addEventListener('change',e=>{ const f=e.target.files[0]; e.target.value=''; uploadFile(f); });
-$('#allieBtn').addEventListener('click',()=>{ if($('#app').style.display==='none'){ $('#home').style.display='none'; $('#app').style.display='flex'; } setAgent(agent==='allie'?'allen':'allie'); });
 $('#convBtn').addEventListener('click',()=>{ $('#convs').classList.add('open'); loadConvs(); });
 $('#convs').addEventListener('click',e=>{ if(e.target.id==='convs') $('#convs').classList.remove('open'); });
 $('#newConv').addEventListener('click',()=>newChat('General'));
