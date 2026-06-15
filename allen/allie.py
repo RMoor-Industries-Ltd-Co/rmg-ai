@@ -58,7 +58,7 @@ def run(task: str, namespace: str) -> str:
     """Delegation entrypoint — ALLEN hands ALLIE a task. She works it AGENTICALLY: pulling live data
     from ClickUp (projects) and Notion (knowledge base) before answering, scoped to the business
     spaces, then returns organized findings for ALLEN to synthesize."""
-    from . import tools_clickup, tools_notion
+    from . import tools_cappo, tools_clickup, tools_notion
     from .config import settings
 
     context = memory.allie_context(namespace)
@@ -67,6 +67,8 @@ def run(task: str, namespace: str) -> str:
         tools += tools_clickup.TOOLS + tools_clickup.WRITE_TOOLS
     if settings.notion_ready:
         tools += tools_notion.TOOLS
+    if tools_cappo.ready():
+        tools += tools_cappo.TOOLS  # delegate AMG work down to Cappo
     if not tools:  # no live sources configured — reason over memory
         return respond(task, history=[], context=context, max_tokens=1200)
 
@@ -78,6 +80,9 @@ def run(task: str, namespace: str) -> str:
         "name, description), clickup_comment_task, clickup_create_list, clickup_create_folder, "
         "clickup_delete_task.\n"
         "• Notion READ: notion_search, then notion_get_page.\n"
+        "• AMG: you do NOT touch AMG directly. For any AMG (Apex Meridian Group) work, DELEGATE to Cappo via "
+        "delegate_to_cappo — he is the AMG AI under you who executes in AMG's own systems. You manage and "
+        "relay; Cappo does the AMG legwork.\n"
         "DISCIPLINE: always read first to get the correct ids before you change anything — never write to an "
         "id you haven't verified. Make exactly the changes the task calls for, nothing extra. Delete only "
         "when clearly asked. When finished, hand ALLEN a tight summary of what you FOUND and what you CHANGED "
@@ -93,6 +98,10 @@ def run(task: str, namespace: str) -> str:
             return res
         if name.startswith("notion_"):
             return tools_notion.handle(name, inp, business_only=True)
+        if name == "delegate_to_cappo":
+            res = tools_cappo.handle(inp.get("task", ""))
+            db.add_audit(namespace, "allie", "delegate_to_cappo", inp.get("task", ""), res)
+            return res
         return f"(unknown tool: {name})"
 
     messages = [{"role": "user", "content": f"Task from ALLEN: {task}"}]

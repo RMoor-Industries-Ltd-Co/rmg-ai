@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     # AMG (Cappo's domain) is its own system; flip on when Cappo matures under ALLIE.
     allie_amg_enabled: bool = False
 
+    # Cappo — the AMG operations AI, reachable by ALLIE's delegate_to_cappo (keyed M2M call).
+    cappo_agent_url: str = "https://cappo.apex-meridian-group.com/api/agent"
+    cappo_agent_key: str = ""
+
     # Google Calendar — ALLEN's personal calendar CRUD (OAuth refresh token).
     google_oauth_client_id: str = ""
     google_oauth_client_secret: str = ""
@@ -54,6 +58,10 @@ class Settings(BaseSettings):
     @property
     def notion_ready(self) -> bool:
         return bool(self.notion_api_key)
+
+    @property
+    def cappo_ready(self) -> bool:
+        return bool(self.cappo_agent_url and self.cappo_agent_key)
 
     @property
     def calendar_ready(self) -> bool:
