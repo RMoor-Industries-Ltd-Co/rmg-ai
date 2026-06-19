@@ -67,6 +67,42 @@ def write_script_doc(
     return j["id"], j.get("webViewLink", f"https://docs.google.com/document/d/{j['id']}/edit")
 
 
+def upload_file_to_drive(
+    name: str, mime_type: str, folder_id: str, data: bytes
+) -> tuple[str, str]:
+    """Upload any binary file to Drive using a resumable upload. Returns (file_id, webViewLink)."""
+    token = _access_token()
+
+    # Initiate resumable session
+    init = requests.post(
+        "https://www.googleapis.com/upload/drive/v3/files",
+        params={"uploadType": "resumable", "fields": "id,webViewLink", "supportsAllDrives": "true"},
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "X-Upload-Content-Type": mime_type,
+            "X-Upload-Content-Length": str(len(data)),
+        },
+        json={"name": name, "parents": [folder_id]},
+        timeout=30,
+    )
+    init.raise_for_status()
+    upload_url = init.headers["Location"]
+
+    # Single PUT (files fit in memory; typical audio < 50 MB)
+    resp = requests.put(
+        upload_url,
+        headers={"Content-Type": mime_type, "Content-Length": str(len(data))},
+        data=data,
+        timeout=300,
+    )
+    resp.raise_for_status()
+    j = resp.json()
+    file_id = j["id"]
+    view_link = j.get("webViewLink", f"https://drive.google.com/file/d/{file_id}/view")
+    return file_id, view_link
+
+
 def _json_str(s: str) -> str:
     import json
 

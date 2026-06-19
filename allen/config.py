@@ -25,11 +25,12 @@ class Settings(BaseSettings):
     allen_voice_id: str = "Z3Gpg2pTWuj7g4RFQM9J"  # COM Coach Rahm
     openai_api_key: str = ""  # optional, for Whisper STT
 
-    # Google Drive (script drafts → Google Docs)
+    # Google Drive (script drafts → Google Docs + YouTube media archive)
     gdrive_client_id: str = ""
     gdrive_client_secret: str = ""
     gdrive_refresh_token: str = ""
     gdrive_scripts_folder_id: str = ""
+    gdrive_youtube_folder_id: str = ""  # Drive folder for YouTube audio/video/transcript saves
 
     # Operational data sources for ALLIE (project mgmt + knowledge base)
     clickup_api_token: str = ""
@@ -89,6 +90,10 @@ class Settings(BaseSettings):
             and self.gdrive_refresh_token
             and self.gdrive_scripts_folder_id
         )
+
+    @property
+    def youtube_ready(self) -> bool:
+        return self.docs_ready and bool(self.gdrive_youtube_folder_id)
 
 
 settings = Settings()

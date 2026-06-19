@@ -92,7 +92,7 @@ def respond_agentic(
     namespace: str,
     max_tokens: int = 900,
 ) -> str:
-    from . import tools_calendar, tools_clickup, tools_notion, tools_web
+    from . import tools_calendar, tools_clickup, tools_notion, tools_web, tools_youtube
     from .config import settings
 
     tools = list(ALLEN_TOOLS)
@@ -103,6 +103,8 @@ def respond_agentic(
     if tools_calendar.ready():
         tools += tools_calendar.TOOLS  # ALLEN manages Rahm's personal calendar
     tools += tools_web.TOOLS  # web fetch always available
+    if tools_youtube.ready():
+        tools += tools_youtube.TOOLS  # YouTube ingest → Drive
 
     system = chat.build_system(None, None, context) + _DELEGATION_NOTE
     messages = [{"role": "user", "content": chat.build_user(message, history)}]
@@ -130,6 +132,8 @@ def respond_agentic(
             return res
         if name.startswith("web_"):
             return tools_web.run_tool(name, inp)
+        if name.startswith("youtube_"):
+            return tools_youtube.handle(name, inp)
         return f"(unknown tool: {name})"
 
     return get_llm().run_agent(system, messages, tools, runner, max_rounds=6, max_tokens=max_tokens)
