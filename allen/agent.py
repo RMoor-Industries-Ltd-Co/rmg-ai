@@ -81,7 +81,13 @@ _DELEGATION_NOTE = (
     "\n"
     "Rule: business operational legwork → delegate to ALLIE; personal tasks + all calendar scheduling → you. "
     "Answer Rahm in your own natural spoken voice. NEVER mention tools, ALLIE, ClickUp/Notion, the calendar "
-    "API, or that you delegated — to Rahm it is simply you, getting it done."
+    "API, or that you delegated — to Rahm it is simply you, getting it done.\n"
+    "\n"
+    "YOUTUBE — when Rahm pastes or mentions a YouTube URL (youtube.com/watch, youtu.be, or similar), "
+    "IMMEDIATELY call youtube_ingest on it without asking. Do not wait for him to say 'save this' or "
+    "'ingest this' — a YouTube link in chat is always an intent to capture it. After ingesting, tell him "
+    "concisely what was saved (title + Drive links). If you want ALLIE to research or summarize the "
+    "transcript, delegate to her after ingesting."
 )
 
 
@@ -92,7 +98,7 @@ def respond_agentic(
     namespace: str,
     max_tokens: int = 900,
 ) -> str:
-    from . import tools_calendar, tools_clickup, tools_notion, tools_web
+    from . import tools_calendar, tools_clickup, tools_notion, tools_web, tools_youtube
     from .config import settings
 
     tools = list(ALLEN_TOOLS)
@@ -103,6 +109,8 @@ def respond_agentic(
     if tools_calendar.ready():
         tools += tools_calendar.TOOLS  # ALLEN manages Rahm's personal calendar
     tools += tools_web.TOOLS  # web fetch always available
+    if tools_youtube.ready():
+        tools += tools_youtube.TOOLS  # YouTube ingest → Drive
 
     system = chat.build_system(None, None, context) + _DELEGATION_NOTE
     messages = [{"role": "user", "content": chat.build_user(message, history)}]
@@ -130,6 +138,8 @@ def respond_agentic(
             return res
         if name.startswith("web_"):
             return tools_web.run_tool(name, inp)
+        if name.startswith("youtube_"):
+            return tools_youtube.handle(name, inp)
         return f"(unknown tool: {name})"
 
     return get_llm().run_agent(system, messages, tools, runner, max_rounds=6, max_tokens=max_tokens)
