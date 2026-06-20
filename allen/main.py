@@ -1,7 +1,7 @@
-from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
-from fastapi.responses import Response
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
+from fastapi.responses import Response, PlainTextResponse
 
-from . import brands, chat, db, docs, emotion, meeting, metadata, scripts, speech, topics, web
+from . import brands, chat, db, docs, emotion, meeting, metadata, scheduler, scripts, speech, topics, web
 from .config import settings
 from .models import (
     ChatRequest,
@@ -43,6 +43,12 @@ def _startup() -> None:
             db.seed_default()
         except Exception as exc:  # don't crash the brain if the DB is slow to come up
             print(f"[allen] DB init deferred: {exc}")
+    scheduler.start()
+
+
+@app.on_event("shutdown")
+def _shutdown() -> None:
+    scheduler.stop()
 
 
 def require_key(x_allen_key: str | None = Header(default=None)) -> None:
@@ -80,6 +86,7 @@ def health() -> HealthResponse:
         "stt": "ok" if settings.stt_ready else "unconfigured",
         "docs": "ok" if settings.docs_ready else "unconfigured",
         "db": "ok" if settings.database_url else "unconfigured",
+        "whatsapp": "ok" if settings.whatsapp_ready else "unconfigured",
     }
     return HealthResponse(status="ok" if settings.llm_ready else "degraded", checks=checks)
 
@@ -270,3 +277,33 @@ async def listen(file: UploadFile = File(...)) -> dict[str, str]:
     except Exception as exc:
         raise HTTPException(502, f"STT error: {exc}") from exc
     return {"text": text}
+
+
+@app.post("/whatsapp/inbound")
+async def whatsapp_inbound(request: Request) -> PlainTextResponse:
+    """Receive inbound WhatsApp messages from Twilio.
+
+    Validates the sender is the authorized number, then processes the message
+    asynchronously and replies via the Twilio REST API. Returns empty TwiML
+    immediately so Twilio doesn't time out waiting for the agent.
+    """
+    from . import agent, whatsapp
+
+    form = await request.form()
+    from_ = str(form.get("From", ""))
+    body = str(form.get("Body", "")).strip()
+
+    if not whatsapp.is_authorized(from_):
+        return PlainTextResponse("<Response/>", media_type="text/xml")
+
+    def _handle(text: str) -> str:
+        return agent.respond_agentic(
+            message=text,
+            history=[],
+            context="Message received via WhatsApp.",
+            namespace="atelier",
+            max_tokens=900,
+        )
+
+    whatsapp.reply_async(body, _handle)
+    return PlainTextResponse("<Response/>", media_type="text/xml")

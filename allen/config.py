@@ -50,7 +50,23 @@ class Settings(BaseSettings):
     google_calendar_id: str = "primary"
     google_oauth_redirect: str = "https://allen.i.verse.rmasters.group/oauth/calendar/callback"
 
+    # Twilio / WhatsApp bridge
+    twilio_account_sid: str = ""
+    twilio_auth_token: str = ""
+    twilio_whatsapp_from: str = ""  # e.g. whatsapp:+14155238886 (sandbox sender)
+    twilio_whatsapp_to: str = ""    # e.g. whatsapp:+1YOURNUMBER (Rahm's personal number)
+    daily_report_time: str = "07:00"  # HH:MM server local time (set TZ env var for offset)
+
     port: int = 8090
+
+    @property
+    def whatsapp_ready(self) -> bool:
+        return bool(
+            self.twilio_account_sid
+            and self.twilio_auth_token
+            and self.twilio_whatsapp_from
+            and self.twilio_whatsapp_to
+        )
 
     @property
     def clickup_ready(self) -> bool:
