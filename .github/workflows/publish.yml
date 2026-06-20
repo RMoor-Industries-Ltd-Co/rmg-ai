@@ -38,3 +38,25 @@ jobs:
           tags: |
             ${{ steps.vars.outputs.prefix }}/allen:${{ steps.vars.outputs.tag }}
             ${{ steps.vars.outputs.prefix }}/allen:latest
+
+  deploy:
+    needs: publish
+    runs-on: ubuntu-latest
+    environment: control
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Pull and restart allen on control server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.CONTROL_HOST }}
+          username: ${{ secrets.CONTROL_USER }}
+          key: ${{ secrets.CONTROL_SSH_KEY }}
+          script: |
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+            cd /opt/rmg-creator-os/control-server
+            docker compose pull allen
+            docker compose up -d allen
+            echo "=== allen logs (last 30 lines) ==="
+            docker logs control-server-allen-1 --tail 30 2>&1 || true
