@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import Response, PlainTextResponse
 
@@ -22,6 +24,8 @@ from .models import (
     TopicsRequest,
     TopicsResponse,
 )
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="ALLEN", version="0.1.0")
 app.include_router(web.router)
@@ -293,7 +297,15 @@ async def whatsapp_inbound(request: Request) -> PlainTextResponse:
     from_ = str(form.get("From", ""))
     body = str(form.get("Body", "")).strip()
 
-    if not whatsapp.is_authorized(from_):
+    authorized = whatsapp.is_authorized(from_)
+    logger.info("[whatsapp/inbound] from=%r body=%r authorized=%s", from_, body[:80], authorized)
+
+    if not authorized:
+        logger.warning(
+            "[whatsapp/inbound] rejected — expected %r got %r",
+            settings.twilio_whatsapp_to,
+            from_,
+        )
         return PlainTextResponse("<Response/>", media_type="text/xml")
 
     def _handle(text: str) -> str:
@@ -307,3 +319,17 @@ async def whatsapp_inbound(request: Request) -> PlainTextResponse:
 
     whatsapp.reply_async(body, _handle)
     return PlainTextResponse("<Response/>", media_type="text/xml")
+
+
+@app.post("/whatsapp/test", dependencies=[Depends(require_admin)])
+def whatsapp_test() -> dict:
+    """Send a test WhatsApp message to the configured recipient. Admin-only."""
+    from . import whatsapp
+
+    if not settings.whatsapp_ready:
+        raise HTTPException(503, "WhatsApp not configured — check TWILIO_* env vars")
+    try:
+        whatsapp.send_message("🔔 ALLEN test message — WhatsApp bridge is working.")
+        return {"ok": True, "to": settings.twilio_whatsapp_to}
+    except Exception as exc:
+        raise HTTPException(502, f"send failed: {exc}") from exc

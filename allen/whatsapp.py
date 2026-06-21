@@ -43,7 +43,15 @@ def _chunks(text: str, size: int) -> list[str]:
 
 def is_authorized(from_: str) -> bool:
     """Only messages from the configured personal number are processed."""
-    return bool(settings.twilio_whatsapp_to) and from_ == settings.twilio_whatsapp_to
+    configured = settings.twilio_whatsapp_to.strip()
+    received = from_.strip()
+    if not configured:
+        logger.warning("[whatsapp] TWILIO_WHATSAPP_TO is not set")
+        return False
+    match = received == configured
+    if not match:
+        logger.warning("[whatsapp] auth failed — configured=%r received=%r", configured, received)
+    return match
 
 
 def reply_async(message: str, handler: Callable[[str], str]) -> None:
