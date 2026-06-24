@@ -43,12 +43,18 @@ class Settings(BaseSettings):
     cappo_agent_url: str = "https://cappo.apex-meridian-group.com/api/agent"
     cappo_agent_key: str = ""
 
-    # Google Calendar — ALLEN's personal calendar CRUD (OAuth refresh token).
+    # Google — unified OAuth for Calendar + Gmail + Drive across all accounts.
     google_oauth_client_id: str = ""
     google_oauth_client_secret: str = ""
+    # Default account used when no account is specified in a tool call.
+    default_google_account: str = "rahmind.consulting@rmoorind.com"
+    # Legacy single-account calendar token (still honored for the default account).
     google_calendar_refresh_token: str = ""
     google_calendar_id: str = "primary"
+    # Redirect URI for the legacy /oauth/calendar flow (kept for backward compat).
     google_oauth_redirect: str = "https://allen.i.verse.rmasters.group/oauth/calendar/callback"
+    # Redirect URI for the new unified /oauth/google flow.
+    google_oauth_unified_redirect: str = "https://allen.i.verse.rmasters.group/oauth/google/callback"
 
     # Twilio / WhatsApp bridge
     twilio_account_sid: str = ""
