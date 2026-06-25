@@ -48,8 +48,8 @@
   .acts { display:flex; gap:8px; margin-top:7px; }
   .acts button { background:transparent; border:1px solid var(--line); color:var(--muted); border-radius:8px; padding:4px 10px; font-size:12px; cursor:pointer; }
   /* input bar */
-  form { display:flex; gap:8px; padding:10px 12px; padding-bottom:max(10px,env(safe-area-inset-bottom)); border-top:1px solid var(--line); background:var(--bg); }
-  form input[type=text] { flex:1; background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:12px; padding:13px 14px; font-size:16px; }
+  form { display:flex; gap:8px; padding:10px 12px; padding-bottom:max(10px,env(safe-area-inset-bottom)); border-top:1px solid var(--line); background:var(--bg); align-items:flex-end; }
+  form textarea#msg { flex:1; background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:12px; padding:13px 14px; font-size:16px; resize:none; overflow-y:hidden; line-height:1.45; min-height:52px; max-height:calc(7 * 1.45em + 26px); font-family:inherit; }
   .send, .mic, .attach { flex:none; border-radius:12px; border:1px solid var(--line); background:var(--panel); color:var(--text); font-size:23px; min-width:54px; min-height:52px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; }
   .send { background:linear-gradient(135deg,var(--gold2),var(--gold)); color:#1a1206; font-weight:700; border:none; }
   .mic.rec { background:#3a1d1d; border-color:#c0392b; color:#ff6b6b; animation:pulse 1.2s infinite; }
@@ -125,7 +125,7 @@
     <button type="button" class="attach" id="attachBtn" title="Attach a file — image, photo, PDF, doc, audio or video">📎</button>
     <input type="file" id="fileIn" accept="image/*,application/pdf,.doc,.docx,.txt,.md,.csv,.json,audio/*,video/*" style="display:none" />
     <button type="button" class="mic" id="mic" title="Talk">🎙️</button>
-    <input type="text" id="msg" placeholder="Ask ALLEN…" autocomplete="off" />
+    <textarea id="msg" rows="1" placeholder="Ask ALLEN…" autocomplete="off"></textarea>
     <button type="submit" class="send" title="Send">↑</button>
   </form>
 </div>
@@ -184,7 +184,7 @@ async function loadInspiration(){
   const h=new Date().getHours(); const part=h<5?'late night':h<12?'morning':h<18?'afternoon':'evening';
   $('#greet').textContent=(h<5?'Burning the midnight oil':'Good '+part)+', Rahm.';
   $('#rateMsg').textContent='';
-  try{ const r=await api('/console/inspiration'); currentInsp=await r.json(); $('#quote').textContent='“'+(currentInsp.text||'Make today count.')+'”'; reflectRating(currentInsp.rating||0); }
+  try{ const r=await api('/console/inspiration'); currentInsp=await r.json(); $('#quote').textContent='"'+(currentInsp.text||'Make today count.')+'"'; reflectRating(currentInsp.rating||0); }
   catch(e){ $('#quote').textContent='Make today count.'; }
 }
 function reflectRating(r){ document.querySelectorAll('#rate .thumb').forEach(b=>b.classList.toggle('on', r>0 && parseInt(b.dataset.r)<=r)); document.querySelector('#rate .notfor').classList.toggle('on', r===0); }
@@ -270,7 +270,7 @@ async function send(text){
 // attach -> ALLEN reads/sees/hears the file -> interpretation
 async function uploadFile(file){
   if(!file) return;
-  const note=$('#msg').value.trim(); $('#msg').value=''; $('#err').textContent='';
+  const note=$('#msg').value.trim(); $('#msg').value=''; resizeMsg(); $('#err').textContent='';
   add('user','📎 '+file.name+(note?(' — '+note):''));
   const thinking=add('allen','Looking at '+file.name+'…');
   try{
@@ -316,7 +316,7 @@ function memItem(m){
 }
 async function loadMem(){ try{ const r=await api('/console/memory'); const d=await r.json(); const ul=$('#memList'); ul.innerHTML='';
   const mems=d.memories||[];
-  if(!mems.length){ ul.innerHTML='<li class="muted">No memories yet. Tell ALLEN anything and he’ll file it.</li>'; return; }
+  if(!mems.length){ ul.innerHTML='<li class="muted">No memories yet. Tell ALLEN anything and he\'ll file it.</li>'; return; }
   const pinned=mems.filter(m=>m.pinned), rest=mems.filter(m=>!m.pinned);
   if(pinned.length){ const h=document.createElement('li'); h.className='lane-head'; h.textContent='📌 Core — ALLEN\'s purpose & directives'; ul.appendChild(h); pinned.forEach(m=>ul.appendChild(memItem(m))); }
   const lanes={}; rest.forEach(m=>{ const l=m.lane||'personal'; (lanes[l]=lanes[l]||[]).push(m); });
@@ -327,7 +327,10 @@ async function loadMem(){ try{ const r=await api('/console/memory'); const d=awa
  }catch(e){} }
 
 // wires
-$('#f').addEventListener('submit',e=>{e.preventDefault();send($('#msg').value);});
+$('#f').addEventListener('submit',e=>{e.preventDefault();const v=$('#msg').value;$('#msg').value='';resizeMsg();send(v);});
+$('#msg').addEventListener('input',resizeMsg);
+$('#msg').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();const v=$('#msg').value;$('#msg').value='';resizeMsg();send(v);} });
+function resizeMsg(){ const t=$('#msg'); t.style.height='auto'; t.style.height=Math.min(t.scrollHeight,parseInt(getComputedStyle(t).maxHeight))+'px'; }
 $('#mic').addEventListener('click',toggleMic);
 $('#attachBtn').addEventListener('click',()=>$('#fileIn').click());
 $('#fileIn').addEventListener('change',e=>{ const f=e.target.files[0]; e.target.value=''; uploadFile(f); });
