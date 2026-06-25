@@ -43,14 +43,36 @@ class Settings(BaseSettings):
     cappo_agent_url: str = "https://cappo.apex-meridian-group.com/api/agent"
     cappo_agent_key: str = ""
 
-    # Google Calendar — ALLEN's personal calendar CRUD (OAuth refresh token).
+    # Google — unified OAuth for Calendar + Gmail + Drive across all accounts.
     google_oauth_client_id: str = ""
     google_oauth_client_secret: str = ""
+    # Default account used when no account is specified in a tool call.
+    default_google_account: str = "rahmind.consulting@rmoorind.com"
+    # Legacy single-account calendar token (still honored for the default account).
     google_calendar_refresh_token: str = ""
     google_calendar_id: str = "primary"
+    # Redirect URI for the legacy /oauth/calendar flow (kept for backward compat).
     google_oauth_redirect: str = "https://allen.i.verse.rmasters.group/oauth/calendar/callback"
+    # Redirect URI for the new unified /oauth/google flow.
+    google_oauth_unified_redirect: str = "https://allen.i.verse.rmasters.group/oauth/google/callback"
+
+    # Twilio / WhatsApp bridge
+    twilio_account_sid: str = ""
+    twilio_auth_token: str = ""
+    twilio_whatsapp_from: str = ""  # e.g. whatsapp:+14155238886 (sandbox sender)
+    twilio_whatsapp_to: str = ""    # e.g. whatsapp:+1YOURNUMBER (Rahm's personal number)
+    daily_report_time: str = "07:00"  # HH:MM server local time (set TZ env var for offset)
 
     port: int = 8090
+
+    @property
+    def whatsapp_ready(self) -> bool:
+        return bool(
+            self.twilio_account_sid
+            and self.twilio_auth_token
+            and self.twilio_whatsapp_from
+            and self.twilio_whatsapp_to
+        )
 
     @property
     def clickup_ready(self) -> bool:

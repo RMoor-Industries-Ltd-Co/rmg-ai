@@ -12,10 +12,13 @@ dependencies = [
   "pydantic-settings>=2.6",
   "python-multipart>=0.0.12",
   "yt-dlp>=2024.1.1",
+  "twilio>=9.0",
+  "apscheduler>=3.10",
+  "psycopg2-binary>=2.9",
 ]
 
 [dependency-groups]
-dev = ["pytest>=8", "psycopg2-binary>=2.9"]
+dev = ["pytest>=8"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
