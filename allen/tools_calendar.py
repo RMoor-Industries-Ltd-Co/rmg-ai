@@ -39,7 +39,8 @@ TOOLS = [
         "description": (
             "Create a calendar event. Provide summary, start and end (ISO datetime like "
             "2026-06-20T14:00:00, or a date like 2026-06-20 for all-day); "
-            "optional description, location, account."
+            "optional description, location, attendees (list of email strings), "
+            "send_updates ('all' | 'none', default 'all'), account."
         ),
         "input_schema": {
             "type": "object",
@@ -49,6 +50,15 @@ TOOLS = [
                 "end": {"type": "string"},
                 "description": {"type": "string"},
                 "location": {"type": "string"},
+                "attendees": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of guest email addresses to invite.",
+                },
+                "send_updates": {
+                    "type": "string",
+                    "description": "'all' sends email invites (default), 'none' adds silently.",
+                },
                 "account": {"type": "string"},
             },
             "required": ["summary", "start"],
@@ -58,7 +68,10 @@ TOOLS = [
         "name": "calendar_update_event",
         "description": (
             "Update/reschedule an event by event_id. "
-            "Provide any of: summary, start, end, description, location, account."
+            "Provide any of: summary, start, end, description, location, account. "
+            "To add guests pass attendees (list of emails) — existing guests are preserved. "
+            "To remove a specific guest pass remove_attendees (list of emails). "
+            "send_updates controls whether Google sends email notifications ('all' | 'none', default 'all')."
         ),
         "input_schema": {
             "type": "object",
@@ -69,6 +82,20 @@ TOOLS = [
                 "end": {"type": "string"},
                 "description": {"type": "string"},
                 "location": {"type": "string"},
+                "attendees": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Guest emails to ADD (merged with existing guests).",
+                },
+                "remove_attendees": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Guest emails to REMOVE from the event.",
+                },
+                "send_updates": {
+                    "type": "string",
+                    "description": "'all' sends email notifications (default), 'none' is silent.",
+                },
                 "account": {"type": "string"},
             },
             "required": ["event_id"],
@@ -120,6 +147,8 @@ def _event_body(args: dict) -> dict:
         body["end"] = _when(args["end"])
     elif args.get("start"):
         body["end"] = _when(args["start"])
+    if args.get("attendees"):
+        body["attendees"] = [{"email": e.strip()} for e in args["attendees"] if e.strip()]
     return body
 
 
@@ -162,33 +191,60 @@ def _list_events(args: dict) -> str:
 
 def _create(args: dict) -> str:
     account = google_auth.resolve_account(args.get("account"))
+    send_updates = args.get("send_updates", "all")
     r = requests.post(
         f"{CAL_BASE}/calendars/{_cal(account)}/events",
         headers=google_auth.auth_headers(account),
+        params={"sendUpdates": send_updates},
         json=_event_body(args),
         timeout=30,
     )
     r.raise_for_status()
     e = r.json()
+    attendee_list = e.get("attendees", [])
+    guests = ", ".join(a["email"] for a in attendee_list) if attendee_list else "none"
     return (
         f"Created event '{e.get('summary')}' (id {e.get('id')}) on {account}"
-        f" — {e.get('htmlLink', '')}"
+        f" — guests: {guests} — {e.get('htmlLink', '')}"
     )
 
 
 def _update(args: dict) -> str:
     account = google_auth.resolve_account(args.get("account"))
-    body = _event_body({k: v for k, v in args.items() if k not in ("event_id", "account")})
+    send_updates = args.get("send_updates", "all")
+    skip = {"event_id", "account", "send_updates", "remove_attendees"}
+    body = _event_body({k: v for k, v in args.items() if k not in skip})
+
+    # Merge attendees: fetch existing, add new, remove requested
+    add_emails = [e.strip() for e in (args.get("attendees") or []) if e.strip()]
+    remove_emails = {e.strip().lower() for e in (args.get("remove_attendees") or [])}
+    if add_emails or remove_emails:
+        fetch = requests.get(
+            f"{CAL_BASE}/calendars/{_cal(account)}/events/{args['event_id']}",
+            headers=google_auth.auth_headers(account),
+            timeout=30,
+        )
+        fetch.raise_for_status()
+        existing = fetch.json().get("attendees", [])
+        existing_emails = {a["email"].lower() for a in existing}
+        merged = [a for a in existing if a["email"].lower() not in remove_emails]
+        merged += [{"email": e} for e in add_emails if e.lower() not in existing_emails]
+        body["attendees"] = merged
+
     if not body:
         return "Nothing to update."
     r = requests.patch(
         f"{CAL_BASE}/calendars/{_cal(account)}/events/{args['event_id']}",
         headers=google_auth.auth_headers(account),
+        params={"sendUpdates": send_updates},
         json=body,
         timeout=30,
     )
     r.raise_for_status()
-    return f"Updated event {args['event_id']} on {account}."
+    updated = r.json()
+    attendee_list = updated.get("attendees", [])
+    guests = ", ".join(a["email"] for a in attendee_list) if attendee_list else "none"
+    return f"Updated event {args['event_id']} on {account} — guests now: {guests}."
 
 
 def _delete(args: dict) -> str:
