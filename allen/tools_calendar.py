@@ -24,12 +24,26 @@ TOOLS = [
     {
         "name": "calendar_create_event",
         "description": "Create a calendar event. Provide summary, start and end (ISO datetime like "
-                       "2026-06-20T14:00:00, or a date like 2026-06-20 for all-day); optional description, location.",
+                       "2026-06-20T14:00:00, or a date like 2026-06-20 for all-day); optional description, "
+                       "location, attendees (list of email strings), and send_updates ('all' or 'none').",
         "input_schema": {
             "type": "object",
             "properties": {
-                "summary": {"type": "string"}, "start": {"type": "string"}, "end": {"type": "string"},
-                "description": {"type": "string"}, "location": {"type": "string"},
+                "summary": {"type": "string"},
+                "start": {"type": "string"},
+                "end": {"type": "string"},
+                "description": {"type": "string"},
+                "location": {"type": "string"},
+                "attendees": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional list of guest email addresses to invite.",
+                },
+                "send_updates": {
+                    "type": "string",
+                    "enum": ["all", "none"],
+                    "description": "Whether to email invitations to attendees. Default 'all'.",
+                },
             },
             "required": ["summary", "start"],
         },
@@ -37,13 +51,32 @@ TOOLS = [
     {
         "name": "calendar_update_event",
         "description": "Update/reschedule an event by event_id. Provide any of: summary, start, end, "
-                       "description, location.",
+                       "description, location, attendees (emails to add), remove_attendees (emails to drop), "
+                       "send_updates ('all' or 'none').",
         "input_schema": {
             "type": "object",
             "properties": {
-                "event_id": {"type": "string"}, "summary": {"type": "string"},
-                "start": {"type": "string"}, "end": {"type": "string"},
-                "description": {"type": "string"}, "location": {"type": "string"},
+                "event_id": {"type": "string"},
+                "summary": {"type": "string"},
+                "start": {"type": "string"},
+                "end": {"type": "string"},
+                "description": {"type": "string"},
+                "location": {"type": "string"},
+                "attendees": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Email addresses of guests to add.",
+                },
+                "remove_attendees": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Email addresses of guests to remove.",
+                },
+                "send_updates": {
+                    "type": "string",
+                    "enum": ["all", "none"],
+                    "description": "Whether to email updates to attendees. Default 'all'.",
+                },
             },
             "required": ["event_id"],
         },
@@ -106,8 +139,10 @@ def _event_body(args: dict) -> dict:
         body["start"] = _when(args["start"])
     if args.get("end"):
         body["end"] = _when(args["end"])
-    elif args.get("start"):  # default end = start (calendar needs both); all-day or same instant
+    elif args.get("start"):  # default end = start; all-day or same instant
         body["end"] = _when(args["start"])
+    if args.get("attendees"):
+        body["attendees"] = [{"email": e} for e in args["attendees"]]
     return body
 
 
@@ -141,19 +176,53 @@ def _iso(v: str) -> str:
 
 
 def _create(args: dict) -> str:
-    r = requests.post(f"{CAL_BASE}/calendars/{_cal()}/events", headers=_h(), json=_event_body(args), timeout=30)
+    params: dict = {}
+    if args.get("send_updates", "all") != "none":
+        params["sendUpdates"] = "all"
+    r = requests.post(
+        f"{CAL_BASE}/calendars/{_cal()}/events",
+        headers=_h(),
+        json=_event_body(args),
+        params=params,
+        timeout=30,
+    )
     r.raise_for_status()
     e = r.json()
-    return f"Created event '{e.get('summary')}' (id {e.get('id')}) — {e.get('htmlLink','')}"
+    guests = e.get("attendees", [])
+    guest_str = f" — {len(guests)} guest(s): {', '.join(a['email'] for a in guests)}" if guests else ""
+    return f"Created event '{e.get('summary')}' (id {e.get('id')}){guest_str} — {e.get('htmlLink', '')}"
 
 
 def _update(args: dict) -> str:
-    body = _event_body({k: v for k, v in args.items() if k != "event_id"})
+    event_id = args["event_id"]
+    add_attendees = args.get("attendees", [])
+    remove_attendees = set(args.get("remove_attendees", []))
+    update_args = {k: v for k, v in args.items() if k not in ("event_id", "remove_attendees", "send_updates")}
+    if add_attendees or remove_attendees:
+        r = requests.get(f"{CAL_BASE}/calendars/{_cal()}/events/{event_id}", headers=_h(), timeout=30)
+        r.raise_for_status()
+        existing = r.json().get("attendees", [])
+        merged = [a for a in existing if a.get("email") not in remove_attendees]
+        existing_emails = {a["email"] for a in merged}
+        for email in add_attendees:
+            if email not in existing_emails:
+                merged.append({"email": email})
+        update_args["attendees"] = merged
+    body = _event_body(update_args)
     if not body:
         return "Nothing to update."
-    r = requests.patch(f"{CAL_BASE}/calendars/{_cal()}/events/{args['event_id']}", headers=_h(), json=body, timeout=30)
+    params: dict = {}
+    if args.get("send_updates", "all") != "none":
+        params["sendUpdates"] = "all"
+    r = requests.patch(
+        f"{CAL_BASE}/calendars/{_cal()}/events/{event_id}",
+        headers=_h(),
+        json=body,
+        params=params,
+        timeout=30,
+    )
     r.raise_for_status()
-    return f"Updated event {args['event_id']}."
+    return f"Updated event {event_id}."
 
 
 def _delete(args: dict) -> str:

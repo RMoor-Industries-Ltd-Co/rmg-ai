@@ -58,7 +58,7 @@ def run(task: str, namespace: str) -> str:
     """Delegation entrypoint — ALLEN hands ALLIE a task. She works it AGENTICALLY: pulling live data
     from ClickUp (projects) and Notion (knowledge base) before answering, scoped to the business
     spaces, then returns organized findings for ALLEN to synthesize."""
-    from . import tools_cappo, tools_clickup, tools_notion, tools_youtube
+    from . import tools_cappo, tools_clickup, tools_gdrive, tools_notion, tools_youtube
     from .config import settings
 
     context = memory.allie_context(namespace)
@@ -71,6 +71,8 @@ def run(task: str, namespace: str) -> str:
         tools += tools_cappo.TOOLS  # delegate AMG work down to Cappo
     if tools_youtube.ready():
         tools += tools_youtube.TOOLS  # YouTube → Drive for research + b-roll
+    if tools_gdrive.ready():
+        tools += tools_gdrive.TOOLS + tools_gdrive.WRITE_TOOLS  # Drive read + CRUD
     if not tools:  # no live sources configured — reason over memory
         return respond(task, history=[], context=context, max_tokens=1200)
 
@@ -90,6 +92,10 @@ def run(task: str, namespace: str) -> str:
         "when sourcing research material, b-roll references, or script inspiration from YouTube. Set "
         "include_video=true only when the visual content is explicitly needed. The tool returns Drive links "
         "you can pass back to ALLEN so Rahm can access or share them.\n"
+        "• DRIVE READ: drive_search, drive_list_folder, drive_read_file — look up files, list folders, "
+        "read text content. Use for research, verifying what exists, pulling source material.\n"
+        "• DRIVE WRITE: drive_create_folder, drive_create_file, drive_update_file, drive_move_file, "
+        "drive_delete_file (moves to Trash). Use for organizing, saving research outputs, or filing records.\n"
         "DISCIPLINE: always read first to get the correct ids before you change anything — never write to an "
         "id you haven't verified. Make exactly the changes the task calls for, nothing extra. Delete only "
         "when clearly asked. When finished, hand ALLEN a tight summary of what you FOUND and what you CHANGED "
@@ -112,6 +118,11 @@ def run(task: str, namespace: str) -> str:
         if name.startswith("youtube_"):
             res = tools_youtube.handle(name, inp)
             db.add_audit(namespace, "allie", name, inp.get("url", ""), res[:200])
+            return res
+        if name.startswith("drive_"):
+            res = tools_gdrive.handle(name, inp)
+            if name in tools_gdrive.WRITE_NAMES:
+                db.add_audit(namespace, "allie", name, json.dumps(inp), res)
             return res
         return f"(unknown tool: {name})"
 

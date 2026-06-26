@@ -88,6 +88,10 @@ _DELEGATION_NOTE = (
     "'ingest this' — a YouTube link in chat is always an intent to capture it. After ingesting, tell him "
     "concisely what was saved (title + Drive links). If you want ALLIE to research or summarize the "
     "transcript, delegate to her after ingesting."
+    "\n"
+    "DRIVE — use drive_search, drive_list_folder, drive_read_file to look things up in Rahm's Google Drive. "
+    "Use drive_create_folder, drive_create_file, drive_update_file, drive_move_file, drive_delete_file to "
+    "organize, save, or manage files directly. Write ops are audit-logged."
 )
 
 
@@ -98,7 +102,7 @@ def respond_agentic(
     namespace: str,
     max_tokens: int = 900,
 ) -> str:
-    from . import tools_calendar, tools_clickup, tools_notion, tools_web, tools_youtube
+    from . import tools_calendar, tools_clickup, tools_gdrive, tools_notion, tools_web, tools_youtube
     from .config import settings
 
     tools = list(ALLEN_TOOLS)
@@ -111,6 +115,8 @@ def respond_agentic(
     tools += tools_web.TOOLS  # web fetch always available
     if tools_youtube.ready():
         tools += tools_youtube.TOOLS  # YouTube ingest → Drive
+    if tools_gdrive.ready():
+        tools += tools_gdrive.TOOLS + tools_gdrive.WRITE_TOOLS  # Drive read + CRUD
 
     system = chat.build_system(None, None, context) + _DELEGATION_NOTE
     messages = [{"role": "user", "content": chat.build_user(message, history)}]
@@ -140,6 +146,11 @@ def respond_agentic(
             return tools_web.run_tool(name, inp)
         if name.startswith("youtube_"):
             return tools_youtube.handle(name, inp)
+        if name.startswith("drive_"):
+            res = tools_gdrive.handle(name, inp)
+            if name in tools_gdrive.WRITE_NAMES:
+                db.add_audit(namespace, "allen", name, json.dumps(inp), res)
+            return res
         return f"(unknown tool: {name})"
 
     return get_llm().run_agent(system, messages, tools, runner, max_rounds=6, max_tokens=max_tokens)

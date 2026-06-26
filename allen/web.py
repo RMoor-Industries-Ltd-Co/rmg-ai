@@ -19,7 +19,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, Response, Upl
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.responses import Response as RawResponse
 
-from . import agent, classify, db, media, memory, speech, tools_calendar
+from . import agent, classify, db, google_auth, media, memory, speech, tools_calendar
 from .config import settings
 
 router = APIRouter()
@@ -153,7 +153,7 @@ def auth_logout(response: Response) -> dict:
     return {"ok": True}
 
 
-# ---- one-time Google Calendar authorization (gives ALLEN calendar CRUD) ----
+# ---- legacy single-account Calendar authorization (kept for backward compat) ----
 @router.get("/oauth/calendar/start")
 def calendar_start(request: Request):
     _session_user(request)
@@ -191,6 +191,75 @@ def calendar_callback(request: Request, code: str = "", error: str = "") -> str:
         return "<h3>No refresh token returned. Revoke ALLEN's access in your Google account and retry.</h3>"
     db.set_config("google_calendar_refresh_token", rt)
     return "<h3>✅ Calendar connected. ALLEN can now manage your calendar. You can close this tab.</h3>"
+
+
+# ---- unified multi-account Google authorization (Calendar + Gmail + Drive) ----
+@router.get("/oauth/google/start")
+def google_start(request: Request, account: str = ""):
+    _session_user(request)
+    if not account:
+        account = google_auth.default_account()
+    # Encode account in state so the callback knows where to store the token
+    state = base64.urlsafe_b64encode(account.encode()).decode()
+    params = {
+        "client_id": settings.google_oauth_client_id,
+        "redirect_uri": settings.google_oauth_unified_redirect,
+        "response_type": "code",
+        "scope": google_auth.UNIFIED_SCOPES,
+        "access_type": "offline",
+        "prompt": "consent",
+        "login_hint": account,
+        "state": state,
+    }
+    return RedirectResponse("https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params))
+
+
+@router.get("/oauth/google/callback", response_class=HTMLResponse)
+def google_callback(request: Request, code: str = "", error: str = "", state: str = "") -> str:
+    _session_user(request)
+    if error or not code:
+        return f"<h3>Google authorization failed: {error or 'no code returned'}</h3>"
+    try:
+        account = base64.urlsafe_b64decode(state + "==").decode()
+    except Exception:
+        account = google_auth.default_account()
+    r = requests.post(
+        "https://oauth2.googleapis.com/token",
+        data={
+            "client_id": settings.google_oauth_client_id,
+            "client_secret": settings.google_oauth_client_secret,
+            "code": code,
+            "redirect_uri": settings.google_oauth_unified_redirect,
+            "grant_type": "authorization_code",
+        },
+        timeout=30,
+    )
+    if not r.ok:
+        return f"<h3>Token exchange failed: {r.text[:300]}</h3>"
+    rt = r.json().get("refresh_token")
+    if not rt:
+        return (
+            "<h3>No refresh token returned. "
+            "Revoke ALLEN's access for this account in Google Account settings and retry.</h3>"
+        )
+    google_auth.store_refresh_token(account, rt)
+    connected = google_auth.connected_accounts()
+    remaining = [
+        a for a in google_auth.KNOWN_ACCOUNTS if a not in connected
+    ]
+    next_hint = ""
+    if remaining:
+        next_account = remaining[0]
+        next_hint = (
+            f"<p>Next: authorize <strong>{next_account}</strong> at "
+            f"<a href='/oauth/google/start?account={next_account}'>"
+            f"/oauth/google/start?account={next_account}</a></p>"
+        )
+    return (
+        f"<h3>✅ {account} connected — Calendar, Gmail, and Drive authorized.</h3>"
+        f"<p>Connected accounts: {len(connected)} / {len(google_auth.KNOWN_ACCOUNTS)}</p>"
+        + next_hint
+    )
 
 
 # ---- console (session-gated; namespace comes from the session) ----
