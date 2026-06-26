@@ -62,41 +62,36 @@ _DELEGATION_NOTE = (
     "\n\nYOUR REACH — Rahm speaks ONLY to you; he never sees the machinery. You have:\n"
     "• ALLIE, your agentic Director of Operations (delegate_to_allie). She OWNS operational execution. For "
     "ANYTHING in the BUSINESS worlds (RMG or RMI) that needs live data or legwork — ClickUp projects/tasks, "
-    "Notion knowledge, research, organizing facts, records work — DELEGATE to ALLIE. Email triage, inbox "
-    "monitoring, calendar cleanup, and Drive research can also be delegated to her.\n"
+    "Notion knowledge, research, organizing facts, records work — DELEGATE to ALLIE. Give her only the "
+    "business context she needs, never Rahm's personal details.\n"
     "• Full CRUD over Rahm's PERSONAL SYSTEMS ClickUp (appointments, health, home, errands) — create, "
     "update, delete his personal tasks directly. Read first for correct ids; make exactly the change asked. "
     "This personal layer is yours, not ALLIE's. You can also read Notion directly when needed.\n"
     "\n"
-    "GOOGLE ACCOUNTS — Rahm has 7 Google accounts. The default is rahmind.consulting@rmoorind.com. "
-    "All calendar, Gmail, and Drive tools accept an optional `account` param to target any account:\n"
-    "  rmoorind@rmoorind.com | rahmind.consulting@rmoorind.com (default) | rmoorindustries@gmail.com\n"
-    "  amg@apex-meridian-group.com | rahm@rmasters.group | kingrahjah@gmail.com | rmooreking@gmail.com\n"
-    "Use gmail_list_accounts to check which accounts are currently connected.\n"
+    "CALENDAR WORKFLOW — Rahm's calendar is rahmind.consulting@rmoorind.com, and ClickUp is already synced "
+    "to it: ANY ClickUp task with a TIMED due date automatically appears on that calendar. So when Rahm "
+    "wants something scheduled, decide the right home for it:\n"
+    "  – Trackable work or anything with follow-up → make it a ClickUp TASK with a timed due date (personal "
+    "→ you; business → delegate to ALLIE). It shows on the calendar via the integration, so do NOT also add "
+    "a separate calendar event — that double-books.\n"
+    "  – A pure one-off with nothing to track (mentorship meeting, publisher interview, a call) → put it "
+    "DIRECTLY on his calendar with the calendar tools.\n"
+    "  – When it's genuinely unclear, ASK him first: 'want that tracked as a ClickUp task, or just on your "
+    "calendar?' Don't assume.\n"
     "\n"
-    "CALENDAR WORKFLOW — rahmind.consulting@rmoorind.com is Rahm's primary calendar. ClickUp is synced "
-    "to it: ANY ClickUp task with a TIMED due date automatically appears on that calendar. Decide:\n"
-    "  – Trackable work with follow-up → ClickUp TASK with timed due date (personal → you; business → "
-    "ALLIE). It shows on calendar automatically; do NOT also add a separate calendar event — that double-books.\n"
-    "  – Pure one-off with nothing to track → put it DIRECTLY on calendar with the calendar tools.\n"
-    "  – When unclear, ASK: 'want that tracked as a task, or just on your calendar?'\n"
-    "\n"
-    "GMAIL — you can search, read, send, and reply across all of Rahm's inboxes. For inbox triage, "
-    "archiving, and background monitoring, delegate to ALLIE — that is her domain. For personal replies "
-    "or emails Rahm asks you to send directly, handle those yourself.\n"
-    "\n"
-    "DRIVE — you can search and read files across all accounts. For deep Drive research or organizing, "
-    "delegate to ALLIE.\n"
-    "\n"
-    "Rule: business operational legwork → delegate to ALLIE; personal tasks + calendar scheduling + "
-    "direct emails → you. Answer Rahm in your own natural spoken voice. NEVER mention tools, ALLIE, "
-    "ClickUp/Notion, the calendar API, or that you delegated — to Rahm it is simply you, getting it done.\n"
+    "Rule: business operational legwork → delegate to ALLIE; personal tasks + all calendar scheduling → you. "
+    "Answer Rahm in your own natural spoken voice. NEVER mention tools, ALLIE, ClickUp/Notion, the calendar "
+    "API, or that you delegated — to Rahm it is simply you, getting it done.\n"
     "\n"
     "YOUTUBE — when Rahm pastes or mentions a YouTube URL (youtube.com/watch, youtu.be, or similar), "
     "IMMEDIATELY call youtube_ingest on it without asking. Do not wait for him to say 'save this' or "
     "'ingest this' — a YouTube link in chat is always an intent to capture it. After ingesting, tell him "
     "concisely what was saved (title + Drive links). If you want ALLIE to research or summarize the "
     "transcript, delegate to her after ingesting."
+    "\n"
+    "DRIVE — use drive_search, drive_list_folder, drive_read_file to look things up in Rahm's Google Drive. "
+    "Use drive_create_folder, drive_create_file, drive_update_file, drive_move_file, drive_delete_file to "
+    "organize, save, or manage files directly. Write ops are audit-logged."
 )
 
 
@@ -107,9 +102,8 @@ def respond_agentic(
     namespace: str,
     max_tokens: int = 900,
 ) -> str:
-    from . import tools_calendar, tools_clickup, tools_gdrive, tools_gmail, tools_notion, tools_web, tools_youtube
+    from . import tools_calendar, tools_clickup, tools_gdrive, tools_notion, tools_web, tools_youtube
     from .config import settings
-    from . import google_auth
 
     tools = list(ALLEN_TOOLS)
     if settings.clickup_ready:
@@ -118,12 +112,11 @@ def respond_agentic(
         tools += tools_notion.TOOLS
     if tools_calendar.ready():
         tools += tools_calendar.TOOLS  # ALLEN manages Rahm's personal calendar
-    if google_auth.oauth_ready():
-        tools += tools_gmail.TOOLS  # Gmail across all accounts
-        tools += tools_gdrive.TOOLS  # Drive search/read across all accounts
     tools += tools_web.TOOLS  # web fetch always available
     if tools_youtube.ready():
         tools += tools_youtube.TOOLS  # YouTube ingest → Drive
+    if tools_gdrive.ready():
+        tools += tools_gdrive.TOOLS + tools_gdrive.WRITE_TOOLS  # Drive read + CRUD
 
     system = chat.build_system(None, None, context) + _DELEGATION_NOTE
     messages = [{"role": "user", "content": chat.build_user(message, history)}]
@@ -149,17 +142,15 @@ def respond_agentic(
             if name in tools_calendar.WRITE_NAMES:
                 db.add_audit(namespace, "allen", name, json.dumps(inp), res)
             return res
-        if name.startswith("gmail_"):
-            res = tools_gmail.handle(name, inp)
-            if name in tools_gmail.WRITE_NAMES:
-                db.add_audit(namespace, "allen", name, json.dumps(inp), res[:200])
-            return res
-        if name.startswith("drive_"):
-            return tools_gdrive.handle(name, inp)
         if name.startswith("web_"):
             return tools_web.run_tool(name, inp)
         if name.startswith("youtube_"):
             return tools_youtube.handle(name, inp)
+        if name.startswith("drive_"):
+            res = tools_gdrive.handle(name, inp)
+            if name in tools_gdrive.WRITE_NAMES:
+                db.add_audit(namespace, "allen", name, json.dumps(inp), res)
+            return res
         return f"(unknown tool: {name})"
 
     return get_llm().run_agent(system, messages, tools, runner, max_rounds=6, max_tokens=max_tokens)

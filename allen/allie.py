@@ -56,9 +56,9 @@ def respond(
 
 def run(task: str, namespace: str) -> str:
     """Delegation entrypoint — ALLEN hands ALLIE a task. She works it AGENTICALLY: pulling live data
-    from ClickUp, Notion, Gmail, Calendar, and Drive before answering, then returns organized findings
-    for ALLEN to synthesize."""
-    from . import google_auth, tools_calendar, tools_cappo, tools_clickup, tools_gdrive, tools_gmail, tools_notion, tools_youtube
+    from ClickUp (projects) and Notion (knowledge base) before answering, scoped to the business
+    spaces, then returns organized findings for ALLEN to synthesize."""
+    from . import tools_cappo, tools_clickup, tools_gdrive, tools_notion, tools_youtube
     from .config import settings
 
     context = memory.allie_context(namespace)
@@ -68,40 +68,38 @@ def run(task: str, namespace: str) -> str:
     if settings.notion_ready:
         tools += tools_notion.TOOLS
     if tools_cappo.ready():
-        tools += tools_cappo.TOOLS
+        tools += tools_cappo.TOOLS  # delegate AMG work down to Cappo
     if tools_youtube.ready():
-        tools += tools_youtube.TOOLS
-    if google_auth.oauth_ready():
-        tools += tools_gmail.TOOLS       # ALLIE is the email workhorse
-        tools += tools_gdrive.TOOLS      # Drive research across all accounts
-        tools += tools_calendar.TOOLS    # Calendar monitoring and scheduling support
-    if not tools:
+        tools += tools_youtube.TOOLS  # YouTube → Drive for research + b-roll
+    if tools_gdrive.ready():
+        tools += tools_gdrive.TOOLS + tools_gdrive.WRITE_TOOLS  # Drive read + CRUD
+    if not tools:  # no live sources configured — reason over memory
         return respond(task, history=[], context=context, max_tokens=1200)
 
     system = _build_system(context) + (
         "\n\nLIVE TOOLS — you can READ and CHANGE Rahm's real operational systems. You have full autonomy "
-        "to act in the BUSINESS spaces (RMG, RMI). Personal/AMG are out of bounds unless explicitly tasked.\n"
+        "to act in the BUSINESS spaces (RMG, RMI); personal/AMG are out of bounds.\n"
         "• ClickUp READ: clickup_hierarchy to find lists, then clickup_list_tasks and clickup_get_task.\n"
         "• ClickUp WRITE: clickup_create_task, clickup_update_task (status, due_date YYYY-MM-DD, priority, "
         "name, description), clickup_comment_task, clickup_create_list, clickup_create_folder, "
         "clickup_delete_task.\n"
         "• Notion READ: notion_search, then notion_get_page.\n"
-        "• AMG: do NOT touch AMG directly — delegate via delegate_to_cappo.\n"
-        "• YouTube INGEST: youtube_ingest(url) saves audio + transcript + optional video to Drive. "
-        "include_video=true only when visuals are explicitly needed.\n"
-        "• GMAIL (all accounts): gmail_search to find emails, gmail_read to read them, gmail_send to send, "
-        "gmail_reply to reply, gmail_archive to clean up. All tools accept an optional `account` param — "
-        "default is rahmind.consulting@rmoorind.com. Use gmail_list_accounts to check what's connected. "
-        "You are the workhorse for inbox monitoring and triage. Archive aggressively when tasked with cleanup. "
-        "For business emails, surface findings to ALLEN; do NOT send emails without explicit instruction.\n"
-        "• GOOGLE DRIVE (all accounts): drive_search to find files, drive_list_folder to browse a folder, "
-        "drive_read_file to read content (Docs, Sheets, Slides, plain text). All accept optional `account`.\n"
-        "• GOOGLE CALENDAR (all accounts): calendar_list_events, calendar_create_event, "
-        "calendar_update_event, calendar_delete_event. All accept optional `account`. "
-        "Use for monitoring upcoming events and scheduling support. ALWAYS confirm with ALLEN before "
-        "creating or deleting calendar events unless explicitly authorized.\n"
-        "DISCIPLINE: read first, then write. Make exactly the changes the task calls for, nothing extra. "
-        "Delete only when clearly asked. Return a tight summary of FINDINGS and CHANGES to ALLEN."
+        "• AMG: you do NOT touch AMG directly. For any AMG (Apex Meridian Group) work, DELEGATE to Cappo via "
+        "delegate_to_cappo — he is the AMG AI under you who executes in AMG's own systems. You manage and "
+        "relay; Cappo does the AMG legwork.\n"
+        "• YouTube INGEST: youtube_ingest(url) downloads audio (MP3), transcript (plain text), and optionally "
+        "video (MP4) from any YouTube URL and saves the files to Google Drive (rahm@rmasters.group). Use this "
+        "when sourcing research material, b-roll references, or script inspiration from YouTube. Set "
+        "include_video=true only when the visual content is explicitly needed. The tool returns Drive links "
+        "you can pass back to ALLEN so Rahm can access or share them.\n"
+        "• DRIVE READ: drive_search, drive_list_folder, drive_read_file — look up files, list folders, "
+        "read text content. Use for research, verifying what exists, pulling source material.\n"
+        "• DRIVE WRITE: drive_create_folder, drive_create_file, drive_update_file, drive_move_file, "
+        "drive_delete_file (moves to Trash). Use for organizing, saving research outputs, or filing records.\n"
+        "DISCIPLINE: always read first to get the correct ids before you change anything — never write to an "
+        "id you haven't verified. Make exactly the changes the task calls for, nothing extra. Delete only "
+        "when clearly asked. When finished, hand ALLEN a tight summary of what you FOUND and what you CHANGED "
+        "(the concrete facts + ids) so he can relay it to Rahm."
     )
 
     def runner(name: str, inp: dict) -> str:
@@ -121,16 +119,9 @@ def run(task: str, namespace: str) -> str:
             res = tools_youtube.handle(name, inp)
             db.add_audit(namespace, "allie", name, inp.get("url", ""), res[:200])
             return res
-        if name.startswith("gmail_"):
-            res = tools_gmail.handle(name, inp)
-            if name in tools_gmail.WRITE_NAMES:
-                db.add_audit(namespace, "allie", name, json.dumps(inp), res[:200])
-            return res
         if name.startswith("drive_"):
-            return tools_gdrive.handle(name, inp)
-        if name.startswith("calendar_"):
-            res = tools_calendar.handle(name, inp)
-            if name in tools_calendar.WRITE_NAMES:
+            res = tools_gdrive.handle(name, inp)
+            if name in tools_gdrive.WRITE_NAMES:
                 db.add_audit(namespace, "allie", name, json.dumps(inp), res)
             return res
         return f"(unknown tool: {name})"
