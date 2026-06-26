@@ -5,14 +5,39 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Run tests
+        # DB-backed tests self-skip when DATABASE_URL is unset, so this needs no infra.
+        run: uv run pytest -q
+
   publish:
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Set image vars
         id: vars
@@ -38,3 +63,5 @@ jobs:
           tags: |
             ${{ steps.vars.outputs.prefix }}/allen:${{ steps.vars.outputs.tag }}
             ${{ steps.vars.outputs.prefix }}/allen:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
