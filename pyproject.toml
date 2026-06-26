@@ -22,6 +22,9 @@ dev = ["pytest>=8"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The project isn't installed (tool.uv package = false), so put the repo
+# root on sys.path for `from allen import ...` to resolve under pytest.
+pythonpath = ["."]
 
 [tool.uv]
 package = false
