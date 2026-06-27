@@ -38,6 +38,7 @@ class Settings(BaseSettings):
 
     # Atelier (Creator OS) — root folder in rahm@rmasters.group Drive
     atelier_root_folder_id: str = "1AxL5st3pmVNolAdSOVep1L-AgviPn7mB"
+    atelier_brand_assets_folder_id: str = "1gVfCOsoWCppdB5n62x2vCoAA845TT4KD"
     atelier_drive_account: str = "rahm@rmasters.group"
 
     # Operational data sources for ALLIE (project mgmt + knowledge base)
