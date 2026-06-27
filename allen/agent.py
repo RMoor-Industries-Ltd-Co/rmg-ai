@@ -101,6 +101,7 @@ def respond_agentic(
     context: Optional[str],
     namespace: str,
     max_tokens: int = 900,
+    model: Optional[str] = None,
 ) -> str:
     from . import tools_calendar, tools_clickup, tools_gdrive, tools_notion, tools_web, tools_youtube
     from .config import settings
@@ -153,4 +154,13 @@ def respond_agentic(
             return res
         return f"(unknown tool: {name})"
 
-    return get_llm().run_agent(system, messages, tools, runner, max_rounds=6, max_tokens=max_tokens)
+    llm = get_llm()
+    if model and hasattr(llm, "model") and model != llm.model:
+        # Swap model for this single call without mutating the shared provider.
+        old = llm.model
+        llm.model = model
+        try:
+            return llm.run_agent(system, messages, tools, runner, max_rounds=6, max_tokens=max_tokens)
+        finally:
+            llm.model = old
+    return llm.run_agent(system, messages, tools, runner, max_rounds=6, max_tokens=max_tokens)

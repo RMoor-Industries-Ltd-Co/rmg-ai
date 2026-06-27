@@ -45,7 +45,7 @@ def _ffmpeg_available() -> bool:
     return which("ffmpeg") is not None
 
 
-def _video_frames_and_audio(data: bytes, ext: str, max_frames: int = 6) -> tuple[list[bytes], str]:
+def _video_frames_and_audio(data: bytes, ext: str, max_frames: int = 8) -> tuple[list[bytes], str]:
     """Sample up to max_frames evenly across the video, and pull an audio transcript."""
     frames: list[bytes] = []
     transcript = ""
@@ -64,10 +64,12 @@ def _video_frames_and_audio(data: bytes, ext: str, max_frames: int = 6) -> tuple
             dur = float((out.stdout or "0").strip() or 0)
         except Exception:
             dur = 0.0
-        fps = (max_frames / dur) if dur > 1 else 1.0
+        # Short clips (≤30 s) get denser sampling; longer clips spread evenly.
+        effective_frames = max_frames if dur <= 30 else min(max_frames, max(4, int(max_frames * 30 / dur)))
+        fps = (effective_frames / dur) if dur > 1 else 1.0
         try:
             subprocess.run(
-                ["ffmpeg", "-i", inp, "-vf", f"fps={fps:.4f}", "-frames:v", str(max_frames),
+                ["ffmpeg", "-i", inp, "-vf", f"fps={fps:.4f}", "-frames:v", str(effective_frames),
                  "-q:v", "4", os.path.join(d, "f_%02d.jpg")],
                 capture_output=True, timeout=120,
             )
@@ -90,7 +92,7 @@ def _video_frames_and_audio(data: bytes, ext: str, max_frames: int = 6) -> tuple
                         transcript = speech.transcribe(fh.read(), "audio.wav")
             except Exception:
                 transcript = ""
-    return frames[:max_frames], transcript
+    return frames[:effective_frames], transcript
 
 
 def speech_ready() -> bool:
@@ -113,6 +115,9 @@ def _extract_text(data: bytes, ext: str) -> str:
         return data.decode("utf-8", errors="replace")
     except Exception:
         return ""
+
+
+MAX_BYTES = 52_428_800  # 50 MB — checked in web.py before calling analyze
 
 
 def analyze(data: bytes, filename: str, note: str | None = None, context: str | None = None) -> dict:

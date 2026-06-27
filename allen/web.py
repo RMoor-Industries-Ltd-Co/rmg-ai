@@ -287,8 +287,9 @@ def console_chat(body: dict, request: Request) -> dict:
     now = (body or {}).get("now")
     if now:
         context = f"Current date and time (Rahm's local): {now}" + (("\n\n" + context) if context else "")
+    model_override = (body or {}).get("model") or None
     # ALLEN answers; he may delegate operational legwork to ALLIE behind the scenes (agentic).
-    raw = agent.respond_agentic(msg, history, context, ns, max_tokens=900)
+    raw = agent.respond_agentic(msg, history, context, ns, max_tokens=900, model=model_override)
     reply, changed = _apply_memory_ops(ns, raw)
     if db.db_ready() and conv_id:
         db.add_message(conv_id, "assistant", reply)
@@ -387,33 +388,87 @@ async def console_listen(request: Request, file: UploadFile = File(...)) -> dict
 @router.post("/console/attach")
 async def console_attach(
     request: Request,
-    file: UploadFile = File(...),
+    files: list[UploadFile] = File(...),
     message: str = Form(""),
     conversationId: str = Form(None),
 ) -> dict:
-    """Rahm shares a file (image, photo, PDF, doc, audio, video). ALLEN reads/sees/hears it and
-    returns his interpretation; the exchange is saved into the conversation like any other turn."""
+    """Rahm stages up to MAX_ATTACH_FILES files in one turn. ALLEN reads/sees/hears each, then
+    synthesises a single reply across all of them. Exchange saved into the conversation."""
     user = _session_user(request)
     ns = user["namespace"]
     if not settings.llm_ready:
         raise HTTPException(503, "LLM not configured")
-    data = await file.read()
-    if not data:
-        raise HTTPException(400, "empty file")
-    fname = file.filename or "file"
-    result = media.analyze(data, fname, (message or "").strip() or None, context=_memory_context(ns))
-    reply = result["analysis"]
+    if not files:
+        raise HTTPException(400, "no files")
+    if len(files) > settings.max_attach_files:
+        raise HTTPException(413, f"Too many files — max {settings.max_attach_files} per turn")
+
+    ctx = _memory_context(ns)
+    results = []
+    fnames = []
+    for upload in files:
+        data = await upload.read()
+        if not data:
+            continue
+        if len(data) > settings.max_upload_bytes:
+            mb = settings.max_upload_bytes // (1024 * 1024)
+            raise HTTPException(413, f"'{upload.filename}' exceeds the {mb} MB upload limit")
+        fname = upload.filename or "file"
+        fnames.append(fname)
+        result = media.analyze(data, fname, None, context=ctx)
+        results.append((fname, result))
+
+    if not results:
+        raise HTTPException(400, "all files were empty")
+
+    note = (message or "").strip()
+    if len(results) == 1:
+        fname, result = results[0]
+        reply = result["analysis"]
+        if note:
+            # Let ALLEN factor the user's note into a follow-up synthesis
+            follow = agent.respond_agentic(
+                f"[Regarding {fname} I just shared] {note}",
+                [{"role": "user", "content": f"📎 {fname}"}, {"role": "assistant", "content": reply}],
+                ctx, ns, max_tokens=900,
+            )
+            reply, _ = _apply_memory_ops(ns, follow)
+        kind = result["kind"]
+    else:
+        # Multi-file: build a combined analysis turn
+        combined = "\n\n---\n\n".join(
+            f"**{fn}** ({r['kind']}):\n{r['analysis']}" for fn, r in results
+        )
+        prompt = (note or "Summarise all these files together.") + "\n\n" + combined
+        raw = agent.respond_agentic(prompt, [], ctx, ns, max_tokens=1200)
+        reply, _ = _apply_memory_ops(ns, raw)
+        kind = "multi"
 
     conv_id = conversationId
     title = None
     if db.db_ready():
         if not (conv_id and db.get_conversation(ns, conv_id)):
-            title = (message.strip() or f"Shared {fname}")[:48]
+            label = ", ".join(fnames[:2]) + ("…" if len(fnames) > 2 else "")
+            title = (note or f"Shared {label}")[:48]
             conv_id = db.create_conversation(ns, "General", title)["id"]
-        shared = f"📎 {fname}" + (f" — {message.strip()}" if message.strip() else "")
-        db.add_message(conv_id, "user", shared)
+        shared_label = "📎 " + ", ".join(fnames) + (f" — {note}" if note else "")
+        db.add_message(conv_id, "user", shared_label)
         db.add_message(conv_id, "assistant", reply)
-    return {"reply": reply, "kind": result["kind"], "filename": fname, "conversationId": conv_id, "title": title}
+    return {"reply": reply, "kind": kind, "filenames": fnames, "conversationId": conv_id, "title": title}
+
+
+# Available models for the quick-switch picker
+_MODELS = [
+    {"id": "claude-sonnet-4-6",  "label": "Sonnet 4.6",  "note": "default — fast & capable"},
+    {"id": "claude-haiku-4-5-20251001", "label": "Haiku 4.5", "note": "fastest / lowest cost"},
+    {"id": "claude-opus-4-8",    "label": "Opus 4.8",    "note": "most powerful — higher cost"},
+    {"id": "claude-fable-5",     "label": "Fable 5",     "note": "latest generation"},
+]
+
+@router.get("/console/models")
+def console_models(request: Request) -> dict:
+    _session_user(request)
+    return {"models": _MODELS, "default": settings.anthropic_model}
 
 
 @router.get("/console/memory")

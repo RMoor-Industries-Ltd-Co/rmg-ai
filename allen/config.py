@@ -18,7 +18,11 @@ class Settings(BaseSettings):
 
     # LLM
     anthropic_api_key: str = ""
-    anthropic_model: str = "claude-3-5-sonnet-latest"  # override via env to current model
+    anthropic_model: str = "claude-sonnet-4-6"  # override via env; pick per-message in the console
+
+    # Attachments — multi-file staging
+    max_attach_files: int = 5        # max files per chat turn
+    max_upload_bytes: int = 52_428_800  # 50 MB per file
 
     # Speech
     elevenlabs_api_key: str = ""
@@ -31,6 +35,25 @@ class Settings(BaseSettings):
     gdrive_refresh_token: str = ""
     gdrive_scripts_folder_id: str = ""
     gdrive_youtube_folder_id: str = ""  # Drive folder for YouTube audio/video/transcript saves
+
+    # Atelier (Creator OS) — all folders in rahm@rmasters.group Drive
+    atelier_drive_account: str = "rahm@rmasters.group"
+    atelier_root_folder_id: str = "1AxL5st3pmVNolAdSOVep1L-AgviPn7mB"             # rmg_creator_os
+    atelier_content_engine_folder_id: str = "1k1WKwQKPawwUzUsdTWocay4R3_A04X44"   # 06_CONTENT_ENGINE
+    # BRAND_ASSETS
+    atelier_brand_assets_folder_id: str = "1gVfCOsoWCppdB5n62x2vCoAA845TT4KD"    # BRAND_ASSETS
+    atelier_brand_assets_image_id: str = "1mbyi8HLcRlw8geBfHQ0eWZLIDmN5Qphu"     # BRAND_ASSETS/IMAGE
+    atelier_brand_assets_audio_id: str = "1dLOGvgp2WzikRej4Km_Ntp6GQeQBC0as"     # BRAND_ASSETS/AUDIO
+    atelier_brand_assets_video_id: str = "1DTc37GMeWJfgcN6yM-ftYp_abTlYb4g4"     # BRAND_ASSETS/VIDEO
+    # VIDEO_PRODUCTION
+    atelier_video_production_folder_id: str = "1VV_eiTLF51ZlAzakRd5E5VvLvJnS-QGp" # VIDEO_PRODUCTION
+    atelier_aroll_folder_id: str = "1xNI7cx9-tjVvzzJbW5I40LvTd_vFXXpP"            # VIDEO_PRODUCTION/A_ROLL
+    atelier_broll_folder_id: str = "1chUMHzHfWwTLu3DxOFG_lwMhLVJFJkFt"            # VIDEO_PRODUCTION/B_ROLL
+    atelier_final_folder_id: str = "1pgNAh7UEtXd-tu1GeiySOA3m1u-jphWU"            # VIDEO_PRODUCTION/FINAL
+    # THUMBNAIL_DESIGN
+    atelier_thumbnail_folder_id: str = "13RjM4TBQANfj-2s_jfMI9vKwPpRgYTuN"       # THUMBNAIL_DESIGN
+    atelier_thumbnail_approved_id: str = "1WNpoD8dFjEVN6qRAG-x0xGrnelTKWZSj"      # THUMBNAIL_DESIGN/APPROVED
+    atelier_thumbnail_archived_id: str = "1GOLH9Kz_D_Q37rjQITfhs_-5curV9uFZ"      # THUMBNAIL_DESIGN/ARCHIVED
 
     # Operational data sources for ALLIE (project mgmt + knowledge base)
     clickup_api_token: str = ""
