@@ -35,6 +35,11 @@ def generate_script(req: DraftRequest) -> tuple[str, str, str]:
             "\nGrounding context (from ALLIE — use for accuracy, do not quote verbatim):\n"
             f"{req.allie_context}\n"
         )
+    if req.brand_examples:
+        user += "\n\n## BRAND VOICE MEMORY — approved scripts for this brand. Study the sentence length, hook style, cadence, energy, and how ideas land. Write in this same voice:\n"
+        for i, ex in enumerate(req.brand_examples[:3], 1):
+            user += f"\n--- Example {i} ---\n{ex.strip()}\n"
+        user += "\n---\n"
     user += "\nWrite the script now."
 
     raw = llm.complete(system=system, user=user, max_tokens=1500)
