@@ -18,7 +18,11 @@ class Settings(BaseSettings):
 
     # LLM
     anthropic_api_key: str = ""
-    anthropic_model: str = "claude-3-5-sonnet-latest"  # override via env to current model
+    anthropic_model: str = "claude-sonnet-4-6"  # override via env; pick per-message in the console
+
+    # Attachments — multi-file staging
+    max_attach_files: int = 5        # max files per chat turn
+    max_upload_bytes: int = 52_428_800  # 50 MB per file
 
     # Speech
     elevenlabs_api_key: str = ""
