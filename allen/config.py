@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     gdrive_scripts_folder_id: str = ""
     gdrive_youtube_folder_id: str = ""  # Drive folder for YouTube audio/video/transcript saves
 
+    # Atelier (Creator OS) — root folder in rahm@rmasters.group Drive
+    atelier_root_folder_id: str = "1AxL5st3pmVNolAdSOVep1L-AgviPn7mB"
+    atelier_drive_account: str = "rahm@rmasters.group"
+
     # Operational data sources for ALLIE (project mgmt + knowledge base)
     clickup_api_token: str = ""
     clickup_team_id: str = ""
