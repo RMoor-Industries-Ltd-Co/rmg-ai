@@ -36,10 +36,14 @@ class Settings(BaseSettings):
     gdrive_scripts_folder_id: str = ""
     gdrive_youtube_folder_id: str = ""  # Drive folder for YouTube audio/video/transcript saves
 
-    # Atelier (Creator OS) — root folder in rahm@rmasters.group Drive
-    atelier_root_folder_id: str = "1AxL5st3pmVNolAdSOVep1L-AgviPn7mB"
-    atelier_brand_assets_folder_id: str = "1gVfCOsoWCppdB5n62x2vCoAA845TT4KD"
+    # Atelier (Creator OS) — all folders in rahm@rmasters.group Drive
     atelier_drive_account: str = "rahm@rmasters.group"
+    atelier_root_folder_id: str = "1AxL5st3pmVNolAdSOVep1L-AgviPn7mB"           # rmg_creator_os
+    atelier_content_engine_folder_id: str = "1k1WKwQKPawwUzUsdTWocay4R3_A04X44" # 06_CONTENT_ENGINE
+    atelier_brand_assets_folder_id: str = "1gVfCOsoWCppdB5n62x2vCoAA845TT4KD"   # BRAND_ASSETS
+    atelier_brand_assets_image_id: str = "1mbyi8HLcRlw8geBfHQ0eWZLIDmN5Qphu"   # BRAND_ASSETS/IMAGE
+    atelier_brand_assets_audio_id: str = "1dLOGvgp2WzikRej4Km_Ntp6GQeQBC0as"   # BRAND_ASSETS/AUDIO
+    atelier_brand_assets_video_id: str = "1DTc37GMeWJfgcN6yM-ftYp_abTlYb4g4"   # BRAND_ASSETS/VIDEO
 
     # Operational data sources for ALLIE (project mgmt + knowledge base)
     clickup_api_token: str = ""
