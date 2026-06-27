@@ -170,13 +170,11 @@ def draft(req: DraftRequest) -> DraftResponse:
         raise HTTPException(502, f"LLM error: {exc}") from exc
 
     doc_id = doc_url = None
-    if req.write_doc:
-        if not settings.docs_ready:
-            raise HTTPException(503, "Docs not configured (set GDRIVE_* + GDRIVE_SCRIPTS_FOLDER_ID)")
+    if req.write_doc and settings.docs_ready:
         try:
             doc_id, doc_url = docs.write_script_doc(title, script, req.brand, req.persona, req.output_kind)
         except Exception as exc:
-            raise HTTPException(502, f"Drive/Docs error: {exc}") from exc
+            logger.warning("[draft] Drive/Docs write failed (non-fatal): %s", exc)
 
     return DraftResponse(
         brand=req.brand,
