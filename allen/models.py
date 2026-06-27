@@ -27,6 +27,7 @@ class DraftRequest(BaseModel):
     output_kind: OutputKind = "post"
     allie_context: Optional[str] = Field(None, description="Grounding context/research from ALLIE")
     write_doc: bool = Field(True, description="Write the draft to Google Docs for review")
+    brand_examples: Optional[list[str]] = Field(None, description="Previously approved scripts for this brand — used as few-shot style reference")
 
 
 class DraftResponse(BaseModel):
@@ -46,6 +47,7 @@ class DirectRequest(BaseModel):
     persona: Optional[str] = None
     intensity: Optional[str] = None
     stability_mode: Optional[str] = None  # creative | natural | robust (override)
+    brand_examples: Optional[list[str]] = Field(None, description="Previously tagged scripts for this brand — used as style reference for the emotion director")
 
 
 class DirectResponse(BaseModel):

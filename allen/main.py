@@ -198,7 +198,8 @@ def direct(req: DirectRequest) -> DirectResponse:
         raise HTTPException(503, "LLM not configured (set ANTHROPIC_API_KEY)")
     try:
         result = emotion.direct(
-            req.script, req.brand, req.persona, req.intensity, req.stability_mode
+            req.script, req.brand, req.persona, req.intensity, req.stability_mode,
+            brand_examples=req.brand_examples,
         )
     except Exception as exc:
         raise HTTPException(502, f"Emotion Director error: {exc}") from exc

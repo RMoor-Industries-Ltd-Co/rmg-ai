@@ -1,50 +1,53 @@
-"""Emotion Director — replicates the ElevenLabs Emotion Creator + Director GPTs,
-upgraded for eleven_v3. Annotates an approved script with v3 audio tags, CAPS
-emphasis, ellipsis pauses, and recommends a stability mode. Per-brand palettes
-come from the brand voice (see BRAND_PROMPTS optimization columns)."""
+"""Emotion Director — annotates an approved script with ElevenLabs v3 audio tags
+for dynamic, realistic delivery. Based on verified ElevenLabs v3 documentation:
+- Square-bracket tags [like this] are the primary mechanism; they are NOT spoken aloud
+- ALL CAPS does NOT reliably produce emphasis in v3 — use [emphatic]/[drawn out] instead
+- SSML break tags are not supported in v3; use [pause]/[short pause]/[long pause] tags
+- Ellipses work as soft hesitation pauses; em dashes for hard breaks"""
 
 from typing import Optional
 
 from .brands import _PRESETS
 from .llm import get_llm
 
-# Per-brand emotion profiles (from the BRAND_PROMPTS optimization columns).
+# Per-brand emotion profiles aligned with verified ElevenLabs v3 tag vocabulary.
+# Emphasis is tag-based only — ALL CAPS removed (ineffective in v3, per official docs).
 EMOTION_PROFILES: dict[str, dict[str, str]] = {
     "com": {
-        "tags": "[thoughtful] [measured] [sincere] [reflective]; sparing [emphatic]",
+        "tags": "[thoughtful] [sincere] [reflective] [measured]; [emphatic] at the lesson; [pause] before wisdom lands",
         "stability": "natural",
-        "emphasis": "light CAPS on 1-2 pivotal words; let punctuation carry the weight",
-        "pacing": "measured, deliberate; pause before the lesson lands",
+        "delivery": "measured, deliberate; [pause] before the key insight; [drawn out] on pivotal words",
+        "pacing": "unhurried; let the idea settle; paragraph breaks are breathing room",
     },
     "vlog": {
-        "tags": "[clear] [focused] [assured]; brief pauses at key transitions",
+        "tags": "[clear] [focused] [assured]; [drawn out] on the payoff word; [short pause] at transitions",
         "stability": "natural",
-        "emphasis": "light CAPS on one technical or payoff word",
-        "pacing": "deliberate, even; crisp segment breaks",
+        "delivery": "[drawn out] on one key technical or payoff word per segment; crisp segment breaks",
+        "pacing": "deliberate and even; clean cuts between ideas; no rush",
     },
     "mstr-rahm": {
-        "tags": "[intense] [emphatic] [bold]; fast beats; rare pause before the hit",
+        "tags": "[intense] [emphatic] [bold]; [pause] before the hit; [dramatic tone] on the punchline",
         "stability": "creative",
-        "emphasis": "CAPS on the punch line; staccato",
-        "pacing": "fast, hard cuts; punchy momentum",
+        "delivery": "[emphatic] on the punchline; [rushed] through the build; [pause] — then land it hard",
+        "pacing": "fast momentum, hard cuts; punchy staccato; silence is a weapon",
     },
     "busy-mf": {
-        "tags": "[excited] [energetic] [confident]; quick; [emphatic] on the offer",
+        "tags": "[excited] [energetic] [confident]; [emphatic] on the hook; [emphatic] on the offer",
         "stability": "creative",
-        "emphasis": "CAPS on the hook and the offer",
-        "pacing": "fast hooks, bold rhythm, snappy",
+        "delivery": "[excited] at the open; [emphatic] on the hook word and the offer; [rushed] through the detail",
+        "pacing": "fast hooks, snappy rhythm; quick transitions; bold and direct",
     },
     "orr": {
-        "tags": "[warm] [inviting] [relaxed]; gentle pauses; [delighted]",
+        "tags": "[warm] [inviting] [relaxed]; [delighted] on sensory details; [pause] to let scenes breathe",
         "stability": "natural",
-        "emphasis": "minimal CAPS; let sensory detail carry it",
-        "pacing": "smooth, unhurried; lets scenes breathe",
+        "delivery": "[warm] throughout; [delighted] on the experience words; let scenes breathe naturally",
+        "pacing": "smooth, unhurried; long pauses welcome; sensory language carries the weight",
     },
     "trc": {
-        "tags": "[provocative] [measured] [pointed]; pauses for debate beats",
+        "tags": "[provocative] [measured] [pointed]; [pause] at debate turns; [sarcastic] when challenging assumptions",
         "stability": "natural",
-        "emphasis": "CAPS sparingly on the contested word",
-        "pacing": "measured with sharp turns; panel rhythm",
+        "delivery": "[pointed] on the contested word; [pause] before the counter-argument; sharp panel rhythm",
+        "pacing": "measured with sharp turns; a beat of silence before each reframe",
     },
 }
 
@@ -70,7 +73,7 @@ def profiles() -> dict:
                 "brand": key,
                 "label": BRAND_LABELS.get(key, key),
                 "tags": prof["tags"],
-                "emphasis": prof["emphasis"],
+                "delivery": prof["delivery"],
                 "pacing": prof["pacing"],
                 "stability_mode": prof["stability"],
                 "stability": STABILITY_VALUE.get(prof["stability"], 0.5),
@@ -85,26 +88,44 @@ def direct(
     persona: Optional[str],
     intensity: Optional[str],
     stability_mode: Optional[str] = None,
+    brand_examples: Optional[list[str]] = None,
 ) -> dict:
     prof = EMOTION_PROFILES.get((brand or "").lower(), EMOTION_PROFILES["com"])
     b = _PRESETS["brands"].get((brand or "").lower(), {})
     brand_tone = b.get("tone_rules", "")
 
     system = (
-        "You are the Emotion Director for ElevenLabs v3 voice synthesis. Annotate the script "
-        "for emotional, dynamic delivery WITHOUT changing the words, their order, or their meaning. "
-        "Apply only:\n"
-        f"1. v3 AUDIO TAGS in [square brackets] at emotional beats. Brand palette: {prof['tags']}. "
-        "Use them sparingly and tastefully — a few per script, never on every line.\n"
-        f"2. EMPHASIS: {prof['emphasis']}.\n"
-        "3. PAUSES: use ellipses (…) for dramatic pauses; tune commas and periods for rhythm.\n"
-        f"4. PACING intent: {prof['pacing']}.\n"
-        f"Match this brand's emotional register: {brand_tone[:600]}\n"
-        + (f"Intensity: {intensity}.\n" if intensity else "")
-        + "Return ONLY the annotated script text — no commentary, no labels."
+        "You are the Emotion Director for ElevenLabs v3 voice synthesis.\n\n"
+        "RULES (follow exactly):\n"
+        "1. Annotate the script for emotional, dynamic delivery WITHOUT changing any words, their order, or meaning.\n"
+        "2. Use v3 AUDIO TAGS in [square brackets] at emotional beats — these are never spoken aloud, they direct the voice.\n"
+        f"   Brand tag palette: {prof['tags']}\n"
+        "   Full v3 tag vocabulary: emotions [sad] [angry] [happily] [sorrowful] [excited] [tired] [awe] [curious] "
+        "[crying] [mischievously] [nervous] [sarcastic] [emphatic] [resigned tone]; "
+        "delivery [whispers] [shouts] [dramatic tone] [rushed] [drawn out] [hesitates] [stammers]; "
+        "pauses [pause] [short pause] [long pause]; "
+        "reactions [laughs] [sighs] [clears throat] [breathes].\n"
+        "   Use tags sparingly and tastefully — a few key moments per script, NOT on every line.\n"
+        "   Tags can be chained: [sorrowful] I couldn't sleep... [quietly] And that's when I saw it.\n"
+        "3. PAUSES: Use [pause] / [short pause] / [long pause] tags at dramatic beats. "
+        "Use ellipses (…) only for soft hesitation moments. Em dashes (—) for hard, sharp breaks.\n"
+        f"4. DELIVERY style: {prof['delivery']}\n"
+        f"5. PACING: {prof['pacing']}\n"
+        "6. DO NOT use ALL CAPS for emphasis — it does not reliably work in ElevenLabs v3.\n"
+        f"7. Match this brand's emotional register: {brand_tone[:600]}\n"
+        + (f"8. Intensity: {intensity}.\n" if intensity else "")
+        + "Return ONLY the annotated script text — no commentary, no labels, no explanation."
     )
-    tagged = get_llm().complete(system=system, user=f"Script:\n{script}", max_tokens=1500)
-    # Brand recommends a stability mode; the director (UI) may override it.
+
+    user = f"Script:\n{script}"
+
+    if brand_examples:
+        user += "\n\n## TAGGED SCRIPT MEMORY — previously directed scripts for this brand. Match this tagging density, style, and emotional register:\n"
+        for i, ex in enumerate(brand_examples[:3], 1):
+            user += f"\n--- Example {i} ---\n{ex.strip()}\n"
+        user += "\n---"
+
+    tagged = get_llm().complete(system=system, user=user, max_tokens=1500)
     mode = (stability_mode or prof["stability"]).lower()
     if mode not in STABILITY_VALUE:
         mode = prof["stability"]
