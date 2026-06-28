@@ -1,0 +1,34 @@
+name: Deploy ALLEN
+
+on:
+  workflow_run:
+    workflows: ["Publish ALLEN Image"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-allen
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Deploy to ALLEN server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.CONTROL_HOST }}
+          username: ${{ secrets.CONTROL_USER }}
+          key: ${{ secrets.CONTROL_SSH_KEY }}
+          envs: DOPPLER_TOKEN
+          script: |
+            cd ~/allen
+            docker compose pull allen
+            docker compose up -d --force-recreate allen
+            echo "=== allen logs (last 30 lines) ==="
+            sleep 10
+            docker logs allen 2>&1 | tail -30 || docker logs $(docker ps -qf name=allen) 2>&1 | tail -30 || true
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
