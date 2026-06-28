@@ -2,7 +2,7 @@
 
 > **Cross-project contracts and architecture** live in [`rmg-piaar-system`](https://github.com/RMoor-Industries-Ltd-Co/rmg-piaar-system). Read that first for the full system picture.
 
-Isolated AI systems for the RMG ecosystem. Owned by **PIAAR**. Consumed by `rmg-creator-os` gateway and directly by Rahm via WhatsApp.
+Isolated AI services for the RMG ecosystem. Owned by **PIAAR**. Consumed by `rmg-creator-os` gateway and directly by Rahm via WhatsApp.
 
 ## ⚠️ Two Separate Servers — Never Mix Them
 
@@ -12,65 +12,113 @@ Isolated AI systems for the RMG ecosystem. Owned by **PIAAR**. Consumed by `rmg-
 | **IP** | `74.207.230.232` | `45.33.96.135` |
 | **Purpose** | ALLEN / ALLIE — AI assistant + WhatsApp | RMG Creator OS — content pipeline |
 | **Stack path** | `/home/deploy/allen/` | `/opt/rmg-creator-os/control-server/` |
-| **Secrets** | Doppler `allen-i-verse / prd` | Doppler `master-atelier / prd` |
+| **Doppler** | `allen-i-verse / prd` | `master-atelier / prd` |
 
-**If WhatsApp is broken, SSH to `74.207.230.232`. Never investigate the Master Atelier server for Allen issues.**
+**If WhatsApp is broken, SSH to `74.207.230.232`. Never investigate the Master Atelier server for ALLEN issues.**
 
 ## Services
 
 | Service | Path | Purpose |
 |---|---|---|
 | **ALLEN** | `allen/` | Brand-voice script generation, WhatsApp bridge, daily brief, voice direction |
-| **ALLIE** | `allen/allie.py` + `allie/` | Autonomous research agent; delegates to all ALLEN tools |
+| **ALLIE** | `allen/allie.py` | Autonomous research agent; delegates to all ALLEN tools |
 
-## Allen-I-Verse Server
-
-- **SSH**: `ssh deploy@74.207.230.232`
-- **Stack**: `/home/deploy/allen/` — `docker-compose.yml` + `start.sh`
-- **Containers**: `allen-allen-1`, `allen-postgres-1`, `allen-caddy-1`
-- **Health**: `curl -s https://allen.i.verse.rmasters.group/health | python3 -m json.tool`
-- **Image**: `ghcr.io/rmoor-industries-ltd-co/rmg-ai/allen:latest`
-
-## Deploy
-
-Push to `main` → GitHub Actions builds and pushes image to GHCR. To deploy on the server:
+## Commands
 
 ```bash
-# SSH into Allen-I-Verse server
-ssh deploy@74.207.230.232
-docker pull ghcr.io/rmoor-industries-ltd-co/rmg-ai/allen:latest
-cd ~/allen && ./start.sh
-# ./start.sh runs: doppler run -- docker compose up -d
+pip install -r requirements.txt   # install deps
+uvicorn allen.main:app --reload   # dev server → http://localhost:8090
 ```
 
-Verify with: `curl -s http://localhost:8090/health | python3 -m json.tool` — `"whatsapp": "ok"` must appear.
+## Git
+
+- Active development branch: `claude/eager-bohr-w283ly`
+- Never push to `main` without explicit permission.
+- Never commit secrets. `.gitignore` blocks every `.env*` except `.env.example`.
+
+## CI/CD — Build & Deploy
+
+### Automatic (push to `main`)
+
+`.github/workflows/publish.yml` builds and pushes the Docker image to GHCR on every push to `main`.
+`.github/workflows/deploy.yml` then SSHes into the ALLEN server and force-recreates the container automatically.
+
+Required GitHub Actions secrets:
+
+| Secret | Value |
+|---|---|
+| `CONTROL_HOST` | ALLEN server IP |
+| `CONTROL_USER` | `deploy` |
+| `CONTROL_SSH_KEY` | ED25519 private key authorized on the server |
+| `DOPPLER_TOKEN` | Doppler service token — `allen-i-verse / prd` |
+
+### Manual deploy (emergency / off-cycle)
+
+**Server:** `74.207.230.232` — SSH as `deploy` user. **NOT the rmg-creator-os control server.**
+
+```bash
+ssh deploy@74.207.230.232
+cd ~/allen
+DOPPLER_TOKEN=<token> docker compose pull allen && docker compose up -d --force-recreate allen
+```
+
+Verify: `curl -s http://localhost:8090/health | python3 -m json.tool`
+
+### Server directory layout (clean state)
+
+```
+~/allen/          ← docker-compose.yml + start.sh; run deploys from here
+~/backups/        ← backup archives
+```
+
+No source code lives on the server — the image is pulled from GHCR.
+`--force-recreate allen` is always required — without it the old container stays running.
+
+## UI
+
+**Production URL:** `https://allen.i.verse.rmasters.group`
+
+Served from `allen/static/console.html` via `allen/web.py`. Single HTML file — no build step.
+Changes take effect after a container restart.
 
 ## Secrets
 
-All secrets in **Doppler project `allen-i-verse`, config `prd`**. Key vars:
+All secrets in **Doppler project `allen-i-verse`, config `prd`** (39 active). Injected at container start via `doppler run --`.
+Never paste real secret values into chat or any committed file.
 
 | Var | Notes |
 |---|---|
 | `ANTHROPIC_API_KEY` | Claude API — shared AMG key |
-| `ANTHROPIC_MODEL` | Default: `claude-3-5-sonnet-latest` |
-| `ELEVENLABS_API_KEY` | TTS for voice responses |
+| `ANTHROPIC_MODEL` | `claude-sonnet-4-6` |
+| `ADMIN_API_KEY` | Admin endpoints + `/whatsapp/test` |
+| `ALLEN_API_KEY` | Shared key for `/draft`, `/speak`, `/listen` |
 | `ALLEN_VOICE_ID` | ElevenLabs voice ID for ALLEN |
-| `OPENAI_API_KEY` | Whisper STT for `/listen` (optional) |
-| `GOOGLE_OAUTH_CLIENT_ID/SECRET` | Unified Google OAuth (Calendar, Gmail, Drive) |
+| `AUTH_ALLOWED_EMAIL` | Google sign-in authorized email |
+| `BASE44_API_KEY` | Base44 integration |
+| `CAPPO_AGENT_KEY` / `CAPPO_AGENT_URL` | Cappo Meridian (AMG) integration |
+| `CLICKUP_API_TOKEN` / `CLICKUP_TEAM_ID` | ClickUp access |
+| `COOKIE_SECRET` | Session cookie encryption |
+| `DATABASE_URL` | PostgreSQL connection string |
 | `DEFAULT_GOOGLE_ACCOUNT` | `rahmind.consulting@rmoorind.com` |
-| `GDRIVE_CLIENT_ID/SECRET/REFRESH_TOKEN` | Legacy Drive credentials for docs/youtube ingest |
+| `ELEVENLABS_API_KEY` | TTS for voice responses |
+| `FATHOM_API_KEY` / `FATHOM_WEBHOOK_SECRET` | Fathom analytics |
+| `GDRIVE_CLIENT_ID` / `GDRIVE_CLIENT_SECRET` / `GDRIVE_REFRESH_TOKEN` | Legacy Drive credentials |
 | `GDRIVE_SCRIPTS_FOLDER_ID` | Drive folder for script drafts |
-| `GDRIVE_YOUTUBE_FOLDER_ID` | Drive folder for YouTube ingests |
+| `GHCR_TOKEN` / `GHCR_USERNAME` | GHCR pull credentials |
+| `GOOGLE_CLIENT_ID` | Google sign-in client |
+| `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` | Unified Google OAuth |
+| `NOTION_API_KEY` | Notion access |
+| `OPENAI_API_KEY` | Whisper STT for `/listen` (optional) |
+| `PERPLEXITY_API_KEY` | Perplexity search integration |
+| `POSTGRES_PASSWORD` | Database password |
+| `SEQUENCE_API_KEY` | Sequence integration |
+| `TIKTOK_CLIENT_ID_PROD` / `TIKTOK_CLIENT_SECRET_PROD` | TikTok integration |
 | `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` | WhatsApp bridge |
 | `TWILIO_WHATSAPP_FROM` | Sandbox: `whatsapp:+14155238886` |
 | `TWILIO_WHATSAPP_TO` | Rahm's number — only authorized inbound sender |
-| `DAILY_REPORT_TIME` | HH:MM for morning brief (container TZ = America/New_York) |
-| `CLICKUP_API_TOKEN` / `CLICKUP_TEAM_ID` | ClickUp access |
-| `NOTION_API_KEY` | Notion access |
-| `CAPPO_AGENT_URL` / `CAPPO_AGENT_KEY` | Cappo Meridian (AMG) integration |
-| `ADMIN_API_KEY` | For `/whatsapp/test` and admin endpoints |
+| `YOUTUBE_API_KEY` | YouTube API access |
 
-**If you add a new env var, add it to `docker-compose.yml` environment block AND Doppler `allen-i-verse / prd`.**
+**If you add a new env var:** add it to `docker-compose.yml` environment block AND Doppler `allen-i-verse / prd`.
 
 ## Google Multi-Account
 
@@ -89,7 +137,7 @@ Accounts: `rmoorind@rmoorind.com`, `rahmind.consulting@rmoorind.com` (default), 
 | `tools_clickup.py` | ClickUp tasks/lists/spaces |
 | `tools_notion.py` | Notion pages/databases |
 | `tools_gdrive.py` | Google Drive CRUD (read + write) |
-| `tools_calendar.py` | Google Calendar events |
+| `tools_calendar.py` | Google Calendar events + attendees |
 | `tools_gmail.py` | Gmail read/send |
 | `tools_youtube.py` | YouTube ingest (yt-dlp → Drive) |
 | `tools_cappo.py` | Cappo Meridian (AMG project hub) |
@@ -100,6 +148,17 @@ Accounts: `rmoorind@rmoorind.com`, `rahmind.consulting@rmoorind.com` (default), 
 - **Scheduler**: APScheduler cron job (`scheduler.py`) for daily brief (`report.py`)
 - **Voice direction**: `emotion.py` — ElevenLabs v3 bracket tags
 - **Speech**: `speech.py` (TTS out), `media.py` (STT in via Whisper)
+
+## Key modules
+
+| File | Purpose |
+|---|---|
+| `allen/main.py` | FastAPI app, mounts static files and router |
+| `allen/web.py` | ALLEN I VERSE console routes (served at `/`) |
+| `allen/agent.py` | ALLEN agentic loop + tool dispatch |
+| `allen/allie.py` | ALLIE agent (AMG-scoped intelligence) |
+| `allen/static/console.html` | Full console UI (single file, no build step) |
+| `allen/config.py` | Pydantic settings (all env vars) |
 
 ## Twilio WhatsApp Sandbox
 
