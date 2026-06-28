@@ -199,6 +199,11 @@ let currentModel = ''; // active model id; empty = server default
 async function api(path, opts={}) {
   const r = await fetch(path, { credentials:'same-origin', ...opts });
   if (r.status === 401) { showLogin(); throw new Error('login'); }
+  if (!r.ok) {
+    let msg = `Server error (${r.status})`;
+    try { const e = await r.json(); msg = e.detail || msg; } catch {}
+    throw new Error(msg);
+  }
   return r;
 }
 function showLogin(){ $('#login').style.display='flex'; $('#home').style.display='none'; $('#app').style.display='none'; ['newChatTop','convBtn','memBtn','outBtn'].forEach(id=>$('#'+id).style.display='none'); }

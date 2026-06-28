@@ -289,7 +289,10 @@ def console_chat(body: dict, request: Request) -> dict:
         context = f"Current date and time (Rahm's local): {now}" + (("\n\n" + context) if context else "")
     model_override = (body or {}).get("model") or None
     # ALLEN answers; he may delegate operational legwork to ALLIE behind the scenes (agentic).
-    raw = agent.respond_agentic(msg, history, context, ns, max_tokens=900, model=model_override)
+    try:
+        raw = agent.respond_agentic(msg, history, context, ns, max_tokens=900, model=model_override)
+    except Exception as exc:
+        raise HTTPException(500, f"ALLEN encountered an error: {exc}") from exc
     reply, changed = _apply_memory_ops(ns, raw)
     if db.db_ready() and conv_id:
         db.add_message(conv_id, "assistant", reply)
@@ -427,11 +430,14 @@ async def console_attach(
         reply = result["analysis"]
         if note:
             # Let ALLEN factor the user's note into a follow-up synthesis
-            follow = agent.respond_agentic(
-                f"[Regarding {fname} I just shared] {note}",
-                [{"role": "user", "content": f"📎 {fname}"}, {"role": "assistant", "content": reply}],
-                ctx, ns, max_tokens=900,
-            )
+            try:
+                follow = agent.respond_agentic(
+                    f"[Regarding {fname} I just shared] {note}",
+                    [{"role": "user", "content": f"📎 {fname}"}, {"role": "assistant", "content": reply}],
+                    ctx, ns, max_tokens=900,
+                )
+            except Exception as exc:
+                raise HTTPException(500, f"ALLEN encountered an error: {exc}") from exc
             reply, _ = _apply_memory_ops(ns, follow)
         kind = result["kind"]
     else:
@@ -440,7 +446,10 @@ async def console_attach(
             f"**{fn}** ({r['kind']}):\n{r['analysis']}" for fn, r in results
         )
         prompt = (note or "Summarise all these files together.") + "\n\n" + combined
-        raw = agent.respond_agentic(prompt, [], ctx, ns, max_tokens=1200)
+        try:
+            raw = agent.respond_agentic(prompt, [], ctx, ns, max_tokens=1200)
+        except Exception as exc:
+            raise HTTPException(500, f"ALLEN encountered an error: {exc}") from exc
         reply, _ = _apply_memory_ops(ns, raw)
         kind = "multi"
 
