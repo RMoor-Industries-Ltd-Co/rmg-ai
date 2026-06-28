@@ -117,7 +117,7 @@ def respond_agentic(
     if tools_youtube.ready():
         tools += tools_youtube.TOOLS  # YouTube ingest → Drive
     if tools_gdrive.ready():
-        tools += tools_gdrive.TOOLS + tools_gdrive.WRITE_TOOLS  # Drive read + CRUD
+        tools += tools_gdrive.TOOLS  # Drive read + CRUD (TOOLS already includes WRITE_TOOLS)
 
     system = chat.build_system(None, None, context) + _DELEGATION_NOTE
     messages = [{"role": "user", "content": chat.build_user(message, history)}]

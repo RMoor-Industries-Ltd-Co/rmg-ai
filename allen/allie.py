@@ -72,7 +72,7 @@ def run(task: str, namespace: str) -> str:
     if tools_youtube.ready():
         tools += tools_youtube.TOOLS  # YouTube → Drive for research + b-roll
     if tools_gdrive.ready():
-        tools += tools_gdrive.TOOLS + tools_gdrive.WRITE_TOOLS  # Drive read + CRUD
+        tools += tools_gdrive.TOOLS  # Drive read + CRUD (TOOLS already includes WRITE_TOOLS)
     if not tools:  # no live sources configured — reason over memory
         return respond(task, history=[], context=context, max_tokens=1200)
 
