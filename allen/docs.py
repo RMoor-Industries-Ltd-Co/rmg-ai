@@ -67,6 +67,20 @@ def write_script_doc(
     return j["id"], j.get("webViewLink", f"https://docs.google.com/document/d/{j['id']}/edit")
 
 
+def create_drive_folder(name: str, parent_id: str) -> str:
+    """Create a Drive folder inside parent_id. Returns the new folder's file ID."""
+    token = _access_token()
+    resp = requests.post(
+        "https://www.googleapis.com/drive/v3/files",
+        params={"fields": "id", "supportsAllDrives": "true"},
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        json={"name": name, "mimeType": "application/vnd.google-apps.folder", "parents": [parent_id]},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    return resp.json()["id"]
+
+
 def upload_file_to_drive(
     name: str, mime_type: str, folder_id: str, data: bytes
 ) -> tuple[str, str]:
