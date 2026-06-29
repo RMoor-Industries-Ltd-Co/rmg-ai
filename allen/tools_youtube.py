@@ -94,15 +94,16 @@ def _retry(fn, retries: int = 4, base_delay: float = 3.0):
 
 
 def _transcribe_with_whisper(audio_path: str, model_size: str = "small") -> str:
+    faster_error: Optional[str] = None
     try:
         from faster_whisper import WhisperModel
         model = WhisperModel(model_size, device="cpu", compute_type="int8")
         segments, _ = model.transcribe(audio_path, beam_size=5)
         return " ".join(seg.text.strip() for seg in segments)
     except ImportError:
-        pass
+        pass  # not installed, try openai-whisper
     except Exception as e:
-        raise RuntimeError(f"faster-whisper failed: {e}") from e
+        faster_error = str(e)  # runtime failure, fall through to openai-whisper
 
     try:
         import whisper
@@ -110,9 +111,11 @@ def _transcribe_with_whisper(audio_path: str, model_size: str = "small") -> str:
         result = model.transcribe(audio_path)
         return result.get("text", "").strip()
     except ImportError:
+        if faster_error:
+            raise RuntimeError(f"faster-whisper failed ({faster_error}); openai-whisper not installed")
         return "(Whisper not installed — install faster-whisper or openai-whisper)"
     except Exception as e:
-        raise RuntimeError(f"openai-whisper failed: {e}") from e
+        raise RuntimeError(f"faster-whisper failed ({faster_error}); openai-whisper failed: {e}") from e
 
 
 def _probe_captions(info: dict) -> bool:

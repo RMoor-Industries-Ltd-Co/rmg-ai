@@ -23,10 +23,11 @@ jobs:
           username: ${{ secrets.CONTROL_USER }}
           key: ${{ secrets.CONTROL_SSH_KEY }}
           envs: DOPPLER_TOKEN
+          script_stop: true
           script: |
             cd ~/allen
             docker compose pull allen
-            docker compose up -d --force-recreate allen
+            DOPPLER_TOKEN=$DOPPLER_TOKEN docker compose up -d --force-recreate allen
             echo "=== allen logs (last 30 lines) ==="
             sleep 10
             docker logs allen 2>&1 | tail -30 || docker logs $(docker ps -qf name=allen) 2>&1 | tail -30 || true
