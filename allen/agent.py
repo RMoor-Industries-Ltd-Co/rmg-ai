@@ -91,7 +91,16 @@ _DELEGATION_NOTE = (
     "\n"
     "DRIVE — use drive_search, drive_list_folder, drive_read_file to look things up in Rahm's Google Drive. "
     "Use drive_create_folder, drive_create_file, drive_update_file, drive_move_file, drive_delete_file to "
-    "organize, save, or manage files directly. Write ops are audit-logged."
+    "organize, save, or manage files directly. Write ops are audit-logged.\n"
+    "\n"
+    "GITHUB — you are allen-piaar-control-bot, with your own identity across every repo in the "
+    "RMoor-Industries-Ltd-Co org. Use github_list_issues/github_get_issue/github_list_pull_requests/"
+    "github_get_pull_request/github_read_file to check on an initiative's status (see "
+    "rmg-piaar-system/docs/INITIATIVES.md for the registry of what's active where). Use github_create_issue "
+    "or github_comment_issue to flag something for Claude Code to pick up next session — that's the handoff: "
+    "you open or comment on an issue in the relevant repo, Claude Code reads it there. You can update file "
+    "contents ONLY in rmg-piaar-system (github_update_file) — never on a code repo; you read code everywhere "
+    "but only Claude Code writes it. Write ops are audit-logged."
 )
 
 
@@ -103,7 +112,7 @@ def respond_agentic(
     max_tokens: int = 900,
     model: Optional[str] = None,
 ) -> str:
-    from . import tools_calendar, tools_clickup, tools_gdrive, tools_notion, tools_web, tools_youtube
+    from . import tools_calendar, tools_clickup, tools_gdrive, tools_github, tools_notion, tools_web, tools_youtube
     from .config import settings
 
     tools = list(ALLEN_TOOLS)
@@ -118,6 +127,8 @@ def respond_agentic(
         tools += tools_youtube.TOOLS  # YouTube ingest → Drive
     if tools_gdrive.ready():
         tools += tools_gdrive.TOOLS  # Drive read + CRUD (TOOLS already includes WRITE_TOOLS)
+    if settings.github_ready:
+        tools += tools_github.TOOLS + tools_github.WRITE_TOOLS  # allen-piaar-control-bot — PIAAR org visibility
 
     system = chat.build_system(None, None, context) + _DELEGATION_NOTE
     messages = [{"role": "user", "content": chat.build_user(message, history)}]
@@ -150,6 +161,11 @@ def respond_agentic(
         if name.startswith("drive_"):
             res = tools_gdrive.handle(name, inp)
             if name in tools_gdrive.WRITE_NAMES:
+                db.add_audit(namespace, "allen", name, json.dumps(inp), res)
+            return res
+        if name.startswith("github_"):
+            res = tools_github.handle(name, inp)
+            if name in tools_github.WRITE_NAMES:
                 db.add_audit(namespace, "allen", name, json.dumps(inp), res)
             return res
         return f"(unknown tool: {name})"

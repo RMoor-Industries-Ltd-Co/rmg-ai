@@ -59,6 +59,13 @@ class Settings(BaseSettings):
     clickup_api_token: str = ""
     clickup_team_id: str = ""
     notion_api_key: str = ""
+
+    # GitHub App — ALLEN's own bot identity (allen-piaar-control-bot) across the
+    # RMoor-Industries-Ltd-Co org. Issues read/write everywhere it's installed;
+    # Contents write is restricted (at the tool layer) to rmg-piaar-system only.
+    github_app_id: str = ""
+    github_app_installation_id: str = ""
+    github_app_private_key: str = ""  # PEM; \n-escaped when set as a single-line env var
     # AMG (Cappo's domain) is its own system; flip on when Cappo matures under ALLIE.
     allie_amg_enabled: bool = False
 
@@ -104,6 +111,10 @@ class Settings(BaseSettings):
     @property
     def notion_ready(self) -> bool:
         return bool(self.notion_api_key)
+
+    @property
+    def github_ready(self) -> bool:
+        return bool(self.github_app_id and self.github_app_installation_id and self.github_app_private_key)
 
     @property
     def cappo_ready(self) -> bool:
