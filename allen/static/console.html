@@ -172,7 +172,7 @@
     <div class="input-row">
       <button type="button" class="ibtn" id="attachBtn" title="Attach files — image, photo, PDF, doc, audio or video (up to 5)">📎</button>
       <button type="button" class="ibtn mic" id="mic" title="Talk">🎙️</button>
-      <button type="button" class="ibtn speak" id="speakToggle" title="Speak replies — ALLEN reads answers aloud">🔊</button>
+      <button type="button" class="ibtn speak off" id="speakToggle" title="Replies muted — tap to speak aloud">🔊</button>
       <button type="button" class="ibtn" id="newChatTop" title="New chat" style="display:none">➕</button>
       <button type="button" class="ibtn" id="convBtn" title="Chats" style="display:none">💬</button>
       <button type="button" class="ibtn" id="memBtn" title="Memory" style="display:none">🧠</button>
@@ -234,7 +234,7 @@
 
 <script>
 const $ = s => document.querySelector(s);
-let autoSpeak = true, turns = [], recorder = null, chunks = [], convId = null, pendingFolder = 'General';
+let autoSpeak = false, turns = [], recorder = null, chunks = [], convId = null, pendingFolder = 'General';
 let stagedFiles = [];   // File objects waiting to be sent
 let currentModel = ''; // active model id; empty = server default
 
