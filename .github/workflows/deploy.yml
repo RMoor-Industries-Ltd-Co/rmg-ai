@@ -22,13 +22,17 @@ jobs:
           host: ${{ secrets.CONTROL_HOST }}
           username: ${{ secrets.CONTROL_USER }}
           key: ${{ secrets.CONTROL_SSH_KEY }}
-          envs: DOPPLER_TOKEN
+          envs: DOPPLER_TOKEN,GHCR_USERNAME,GHCR_TOKEN
           script: |
+            set -euo pipefail
             cd ~/allen
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
             docker compose pull allen
             docker compose up -d --force-recreate allen
             echo "=== allen logs (last 30 lines) ==="
             sleep 10
-            docker logs allen 2>&1 | tail -30 || docker logs $(docker ps -qf name=allen) 2>&1 | tail -30 || true
+            docker compose logs --tail=30 allen
         env:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
