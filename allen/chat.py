@@ -81,7 +81,9 @@ def respond(
     history: Optional[list[dict]] = None,
     max_tokens: int = 600,
     context: Optional[str] = None,
+    namespace: str = "",
 ) -> str:
     return get_llm().complete(
-        system=build_system(brand, persona, context), user=build_user(message, history), max_tokens=max_tokens
+        system=build_system(brand, persona, context), user=build_user(message, history), max_tokens=max_tokens,
+        namespace=namespace, feature="chat",
     )
