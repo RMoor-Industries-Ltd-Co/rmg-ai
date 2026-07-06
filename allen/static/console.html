@@ -485,10 +485,12 @@ function fmtUsd(n){ return '$'+(parseFloat(n)||0).toFixed( (Math.abs(n)<1)?4:2 )
 // per-provider renewal date is configured anywhere yet. Purely date-math, no server call.
 function renderCycle(){
   const now=new Date();
-  const daysInMonth=new Date(now.getFullYear(),now.getMonth()+1,0).getDate();
-  const dayOfMonth=now.getDate();
-  const daysLeft=daysInMonth-dayOfMonth;
-  const pct=Math.round((dayOfMonth/daysInMonth)*100);
+  const cycleStart=new Date(now.getFullYear(),now.getMonth(),1);
+  const cycleEnd=new Date(now.getFullYear(),now.getMonth()+1,1);
+  // Derive from actual elapsed/remaining time, not integer day counts — otherwise the
+  // last day of the month reads "0 days left" / 100% at 00:01 even though ~1 day remains.
+  const daysLeft=Math.max(0,Math.ceil((cycleEnd-now)/86400000));
+  const pct=Math.min(100,Math.round(((now-cycleStart)/(cycleEnd-cycleStart))*100));
   const monthName=now.toLocaleString('default',{month:'long'});
   $('#usageCycle').innerHTML=
     '<div class="row"><span class="label">Billing cycle — '+monthName+'</span>'+
