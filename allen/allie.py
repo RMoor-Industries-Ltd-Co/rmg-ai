@@ -45,13 +45,17 @@ def respond(
     history: Optional[list[dict]] = None,
     context: Optional[str] = None,
     max_tokens: int = 900,
+    namespace: str = "",
 ) -> str:
     convo = ""
     for m in (history or [])[-8:]:
         role = "ALLIE" if m.get("role") == "assistant" else "Rahm"
         convo += f"{role}: {m.get('content', '')}\n"
     user = (convo + f"Rahm: {message}\nALLIE:").strip()
-    return get_llm().complete(system=_build_system(context), user=user, max_tokens=max_tokens)
+    return get_llm().complete(
+        system=_build_system(context), user=user, max_tokens=max_tokens,
+        namespace=namespace, feature="allie_chat",
+    )
 
 
 def run(task: str, namespace: str) -> str:
@@ -74,7 +78,7 @@ def run(task: str, namespace: str) -> str:
     if tools_gdrive.ready():
         tools += tools_gdrive.TOOLS  # Drive read + CRUD (TOOLS already includes WRITE_TOOLS)
     if not tools:  # no live sources configured — reason over memory
-        return respond(task, history=[], context=context, max_tokens=1200)
+        return respond(task, history=[], context=context, max_tokens=1200, namespace=namespace)
 
     system = _build_system(context) + (
         "\n\nLIVE TOOLS — you can READ and CHANGE Rahm's real operational systems. You have full autonomy "
@@ -127,4 +131,7 @@ def run(task: str, namespace: str) -> str:
         return f"(unknown tool: {name})"
 
     messages = [{"role": "user", "content": f"Task from ALLEN: {task}"}]
-    return get_llm().run_agent(system, messages, tools, runner, max_rounds=7, max_tokens=1300)
+    return get_llm().run_agent(
+        system, messages, tools, runner, max_rounds=7, max_tokens=1300,
+        namespace=namespace, feature="allie_agent",
+    )

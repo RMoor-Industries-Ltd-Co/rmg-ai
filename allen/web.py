@@ -19,7 +19,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, Response, Upl
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.responses import Response as RawResponse
 
-from . import agent, classify, db, google_auth, media, memory, speech, tools_calendar
+from . import agent, classify, db, google_auth, media, memory, speech, tools_calendar, usage
 from .config import settings
 
 router = APIRouter()
@@ -372,20 +372,29 @@ def add_inspiration_ep(body: dict, request: Request) -> dict:
 
 @router.post("/console/speak")
 def console_speak(body: dict, request: Request) -> RawResponse:
-    _session_user(request)
+    user = _session_user(request)
     if not settings.tts_ready:
         raise HTTPException(503, "TTS not configured")
-    audio = speech.synthesize((body or {}).get("text", ""))
+    audio = speech.synthesize((body or {}).get("text", ""), namespace=user["namespace"], feature="tts")
     return RawResponse(content=audio, media_type="audio/mpeg")
 
 
 @router.post("/console/listen")
 async def console_listen(request: Request, file: UploadFile = File(...)) -> dict:
-    _session_user(request)
+    user = _session_user(request)
     if not settings.stt_ready:
         raise HTTPException(503, "STT not configured")
     audio = await file.read()
-    return {"text": speech.transcribe(audio, file.filename or "audio.webm")}
+    text = speech.transcribe(audio, file.filename or "audio.webm", namespace=user["namespace"], feature="dictate")
+    return {"text": text}
+
+
+@router.get("/console/usage")
+def console_usage(request: Request, days: int = 30) -> dict:
+    """Data source for the "$" dashboard panel — session-gated same as the rest of the
+    console (no separate admin key needed; the console is already single-user-gated)."""
+    _session_user(request)
+    return usage.dashboard(days=days)
 
 
 @router.post("/console/attach")

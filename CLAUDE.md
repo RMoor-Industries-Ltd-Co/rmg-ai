@@ -106,4 +106,5 @@ Never paste real secret values into chat or any committed file.
 | `allen/tools_calendar.py` | Google Calendar tools |
 | `allen/tools_clickup.py` | ClickUp tools |
 | `allen/tools_notion.py` | Notion tools |
+| `allen/usage.py` | Usage & cost tracking — PIAAR project registry, rate tables, the "$" console dashboard's data source |
 | `allen/config.py` | Pydantic settings (all env vars) |
