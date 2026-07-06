@@ -106,4 +106,7 @@ Never paste real secret values into chat or any committed file.
 | `allen/tools_calendar.py` | Google Calendar tools |
 | `allen/tools_clickup.py` | ClickUp tools |
 | `allen/tools_notion.py` | Notion tools |
+| `allen/tools_market_feed.py` | ALLIE's feed-watch scans (yfinance, YouTube) for "hot instrument" signals |
+| `allen/feed_watch.py` | Feed-watch job — scans configured tickers, pushes signals to Thoth (axis-tekhen) |
+| `allen/scheduler.py` | Background scheduler — daily WhatsApp report + feed-watch interval job |
 | `allen/config.py` | Pydantic settings (all env vars) |

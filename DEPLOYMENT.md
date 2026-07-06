@@ -80,6 +80,9 @@ services:
       - COOKIE_SECRET
       - DATABASE_URL
       - ELEVENLABS_API_KEY
+      - FEED_WATCH_ENABLED
+      - FEED_WATCH_TICKERS
+      - FEED_WATCH_INTERVAL_MINUTES
       - GDRIVE_CLIENT_ID
       - GDRIVE_CLIENT_SECRET
       - GDRIVE_REFRESH_TOKEN
@@ -90,16 +93,29 @@ services:
       - NOTION_API_KEY
       - OPENAI_API_KEY
       - POSTGRES_PASSWORD
+      - THOTH_INGEST_URL
+      - THOTH_INGEST_TOKEN
       - TWILIO_ACCOUNT_SID
       - TWILIO_AUTH_TOKEN
       - TWILIO_WHATSAPP_FROM
       - TWILIO_WHATSAPP_TO
+      - YOUTUBE_DATA_API_KEY
     ports:
       - "127.0.0.1:8090:8090"
 ```
 
 All env vars are bare names (no `=value`) — Doppler populates them via `doppler run --`.
 **If you add a new Twilio or integration env var, it must appear in this list AND in Doppler `allen-i-verse / prd`.**
+
+> **Live-server note:** this block is the canonical *reference* — the actual
+> `~/allen/docker-compose.yml` on the ALLEN server is maintained by hand (it's
+> not checked into this repo; see the "Server directory layout" note in
+> `CLAUDE.md`). Adding `FEED_WATCH_*`, `THOTH_INGEST_*`, and
+> `YOUTUBE_DATA_API_KEY` here does **not** update the live file — someone with
+> server access must add these six vars to the deployed `docker-compose.yml`'s
+> `environment:` list (and to Doppler `allen-i-verse / prd`) before the
+> feed-watch job can start, following the exact "Missing Twilio env vars"
+> failure mode documented below.
 
 ---
 
