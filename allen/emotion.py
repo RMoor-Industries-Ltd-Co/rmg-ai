@@ -1,17 +1,19 @@
-"""Emotion Director — annotates an approved script with ElevenLabs v3 audio tags
-for dynamic, realistic delivery. Based on verified ElevenLabs v3 documentation:
-- Square-bracket tags [like this] are the primary mechanism; they are NOT spoken aloud
-- ALL CAPS does NOT reliably produce emphasis in v3 — use [emphatic]/[drawn out] instead
-- SSML break tags are not supported in v3; use [pause]/[short pause]/[long pause] tags
-- Ellipses work as soft hesitation pauses; em dashes for hard breaks"""
+"""Emotion Director — annotates an approved script for ElevenLabs voice synthesis.
+Two rulesets, chosen by `version`:
+- v3: square-bracket audio tags [like this] (not spoken aloud) PLUS ALL CAPS on emphasized
+  words — both mechanisms together in one document. SSML breaks aren't supported; use
+  [pause]/[short pause]/[long pause] tags. Ellipses = soft hesitation; em dashes = hard breaks.
+- v2: the v2 model does not parse bracket tags (it speaks them aloud literally), so v2
+  annotation relies on ALL CAPS + punctuation (ellipses/em dashes) only; emotional delivery
+  is carried by the stability/style sliders, not inline tags."""
 
 from typing import Optional
 
 from .brands import _PRESETS
 from .llm import get_llm
 
-# Per-brand emotion profiles aligned with verified ElevenLabs v3 tag vocabulary.
-# Emphasis is tag-based only — ALL CAPS removed (ineffective in v3, per official docs).
+# Per-brand emotion profiles aligned with the v3 tag vocabulary (also used to derive
+# stability/pacing guidance for v2, which has no bracket tags of its own).
 EMOTION_PROFILES: dict[str, dict[str, str]] = {
     "com": {
         "tags": "[thoughtful] [sincere] [reflective] [measured]; [emphatic] at the lesson; [pause] before wisdom lands",
@@ -82,19 +84,8 @@ def profiles() -> dict:
     return {"profiles": out, "stability_values": STABILITY_VALUE}
 
 
-def direct(
-    script: str,
-    brand: str,
-    persona: Optional[str],
-    intensity: Optional[str],
-    stability_mode: Optional[str] = None,
-    brand_examples: Optional[list[str]] = None,
-) -> dict:
-    prof = EMOTION_PROFILES.get((brand or "").lower(), EMOTION_PROFILES["com"])
-    b = _PRESETS["brands"].get((brand or "").lower(), {})
-    brand_tone = b.get("tone_rules", "")
-
-    system = (
+def _v3_system(prof: dict, brand_tone: str, intensity: Optional[str]) -> str:
+    return (
         "You are the Emotion Director for ElevenLabs v3 voice synthesis.\n\n"
         "RULES (follow exactly):\n"
         "1. Annotate the script for emotional, dynamic delivery WITHOUT changing any words, their order, or meaning.\n"
@@ -111,11 +102,51 @@ def direct(
         "Use ellipses (…) only for soft hesitation moments. Em dashes (—) for hard, sharp breaks.\n"
         f"4. DELIVERY style: {prof['delivery']}\n"
         f"5. PACING: {prof['pacing']}\n"
-        "6. DO NOT use ALL CAPS for emphasis — it does not reliably work in ElevenLabs v3.\n"
+        "6. EMPHASIS: use ALL CAPS on emphasized words/phrases TOGETHER WITH the bracket tags above — "
+        "both mechanisms apply in this document. Caps mark which word carries the emphasis; tags direct "
+        "the surrounding emotional delivery. Use caps sparingly, on the single most important word per beat.\n"
         f"7. Match this brand's emotional register: {brand_tone[:600]}\n"
         + (f"8. Intensity: {intensity}.\n" if intensity else "")
         + "Return ONLY the annotated script text — no commentary, no labels, no explanation."
     )
+
+
+def _v2_system(prof: dict, brand_tone: str, intensity: Optional[str]) -> str:
+    return (
+        "You are the Emotion Director for ElevenLabs v2 voice synthesis.\n\n"
+        "RULES (follow exactly):\n"
+        "1. Annotate the script for emotional, dynamic delivery WITHOUT changing any words, their order, or meaning.\n"
+        "2. The v2 model does NOT parse bracket audio tags — it speaks them aloud literally. "
+        "DO NOT use [square bracket] tags anywhere in this document.\n"
+        "3. EMPHASIS: use ALL CAPS on the single most important word/phrase per beat — this is the primary "
+        "emphasis mechanism for v2. Use sparingly, only at real emotional peaks.\n"
+        "4. PAUSES/PACING: use punctuation only. Ellipses (…) for soft hesitation; em dashes (—) for hard, "
+        "sharp breaks; paragraph breaks for breathing room. No tags, no SSML.\n"
+        f"5. DELIVERY style (carried by narrative tone and word choice, not tags): {prof['delivery']}\n"
+        f"6. PACING: {prof['pacing']}\n"
+        f"7. Match this brand's emotional register: {brand_tone[:600]}\n"
+        + (f"8. Intensity: {intensity}.\n" if intensity else "")
+        + "Return ONLY the annotated script text — no commentary, no labels, no explanation."
+    )
+
+
+def direct(
+    script: str,
+    brand: str,
+    persona: Optional[str],
+    intensity: Optional[str],
+    stability_mode: Optional[str] = None,
+    brand_examples: Optional[list[str]] = None,
+    version: str = "v3",
+) -> dict:
+    prof = EMOTION_PROFILES.get((brand or "").lower(), EMOTION_PROFILES["com"])
+    b = _PRESETS["brands"].get((brand or "").lower(), {})
+    brand_tone = b.get("tone_rules", "")
+    version = (version or "v3").lower()
+    if version not in ("v2", "v3"):
+        version = "v3"
+
+    system = _v2_system(prof, brand_tone, intensity) if version == "v2" else _v3_system(prof, brand_tone, intensity)
 
     user = f"Script:\n{script}"
 
@@ -134,4 +165,5 @@ def direct(
         "stability_mode": mode,
         "stability": STABILITY_VALUE.get(mode, 0.5),
         "audio_tag_palette": prof["tags"],
+        "version": version,
     }

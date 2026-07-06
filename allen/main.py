@@ -197,7 +197,7 @@ def direct(req: DirectRequest) -> DirectResponse:
     try:
         result = emotion.direct(
             req.script, req.brand, req.persona, req.intensity, req.stability_mode,
-            brand_examples=req.brand_examples,
+            brand_examples=req.brand_examples, version=req.version,
         )
     except Exception as exc:
         raise HTTPException(502, f"Emotion Director error: {exc}") from exc
