@@ -53,8 +53,8 @@
   .input-wrap { position:relative; }
   form textarea#msg { width:100%; box-sizing:border-box; background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:12px; padding:13px 56px 13px 14px; font-size:16px; resize:none; overflow-y:auto; line-height:1.45; min-height:52px; max-height:calc(5 * 1.45em + 26px); font-family:inherit; }
   .send { position:absolute; right:7px; bottom:7px; border:none; border-radius:10px; min-width:42px; min-height:38px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; font-size:21px; background:linear-gradient(135deg,var(--gold2),var(--gold)); color:#1a1206; font-weight:700; }
-  .input-row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
-  .ibtn { flex:none; border-radius:12px; border:1px solid var(--line); background:var(--panel); color:var(--text); font-size:22px; min-width:50px; min-height:50px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; }
+  .input-row { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+  .ibtn { flex:none; border-radius:11px; border:1px solid var(--line); background:var(--panel); color:var(--text); font-size:18px; min-width:42px; min-height:42px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; }
   .ibtn.off { opacity:.4; }
   .mic.rec { background:#3a1d1d; border-color:#c0392b; color:#ff6b6b; animation:pulse 1.2s infinite; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.55} }
@@ -107,6 +107,12 @@
   #usage h3 { margin:0 0 4px; }
   .usage-note { font-size:11px; color:var(--muted); margin:0 0 14px; }
   .usage-meta { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px; }
+  .usage-cycle { background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:16px; }
+  .usage-cycle .row { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px; gap:10px; }
+  .usage-cycle .label { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); }
+  .usage-cycle .days { font-size:15px; font-weight:700; color:var(--gold2); white-space:nowrap; }
+  .usage-cycle .track { background:var(--panel); border:1px solid var(--line); border-radius:999px; height:10px; overflow:hidden; }
+  .usage-cycle .fill { height:100%; background:linear-gradient(90deg,var(--gold),var(--gold2)); }
   .usage-tile { background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:10px 14px; min-width:120px; }
   .usage-tile .n { font-size:20px; font-weight:700; color:var(--gold2); }
   .usage-tile .l { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
@@ -219,9 +225,13 @@
 </div></div>
 
 <div id="usage"><div class="sheet">
-  <h3>$ Usage &amp; Cost</h3>
+  <div class="conv-top">
+    <h3>$ Usage &amp; Cost</h3>
+    <button class="icon-btn" id="usageHomeBtn" title="Back to home">⌂</button>
+  </div>
   <p class="usage-note" id="usageNote"></p>
   <div class="usage-meta" id="usageMeta"></div>
+  <div class="usage-cycle" id="usageCycle"></div>
   <div class="usage-trend" id="usageTrend"></div>
   <div class="usage-days" id="usageDays"></div>
   <div class="usage-section-label">Top usage days</div>
@@ -471,7 +481,22 @@ async function loadMem(){ try{ const r=await api('/console/memory'); const d=awa
 // usage & cost drawer — every PIAAR project (even $0/"not reporting" ones), collapsible
 // per-project breakdown, a hand-rolled bar-chart trend, and top-usage-day callouts.
 function fmtUsd(n){ return '$'+(parseFloat(n)||0).toFixed( (Math.abs(n)<1)?4:2 ); }
+// Billing-cycle countdown — assumes a calendar-month cycle (1st -> end of month) since no
+// per-provider renewal date is configured anywhere yet. Purely date-math, no server call.
+function renderCycle(){
+  const now=new Date();
+  const daysInMonth=new Date(now.getFullYear(),now.getMonth()+1,0).getDate();
+  const dayOfMonth=now.getDate();
+  const daysLeft=daysInMonth-dayOfMonth;
+  const pct=Math.round((dayOfMonth/daysInMonth)*100);
+  const monthName=now.toLocaleString('default',{month:'long'});
+  $('#usageCycle').innerHTML=
+    '<div class="row"><span class="label">Billing cycle — '+monthName+'</span>'+
+    '<span class="days">'+daysLeft+' day'+(daysLeft===1?'':'s')+' left</span></div>'+
+    '<div class="track"><div class="fill" style="width:'+pct+'%"></div></div>';
+}
 async function loadUsage(){
+  renderCycle();
   try{
     const r=await api('/console/usage?days=30'); const d=await r.json();
     $('#usageNote').textContent=d.rates_note||'';
@@ -557,6 +582,7 @@ $('#memBtn').addEventListener('click',()=>{ $('#mem').classList.add('open'); loa
 $('#mem').addEventListener('click',e=>{ if(e.target.id==='mem') $('#mem').classList.remove('open'); });
 $('#usageBtn').addEventListener('click',()=>{ $('#usage').classList.add('open'); loadUsage(); });
 $('#usage').addEventListener('click',e=>{ if(e.target.id==='usage') $('#usage').classList.remove('open'); });
+$('#usageHomeBtn').addEventListener('click',()=>{ $('#usage').classList.remove('open'); showHome(); });
 $('#memAdd').addEventListener('click',async()=>{ const v=$('#memIn').value.trim(); if(!v) return; await api('/console/memory',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:v})}); $('#memIn').value=''; loadMem(); });
 $('#outBtn').addEventListener('click',async()=>{ await fetch('/auth/logout',{method:'POST',credentials:'same-origin'}); showLogin(); });
 document.querySelectorAll('.starter').forEach(b=>b.addEventListener('click',()=>send(b.textContent)));
