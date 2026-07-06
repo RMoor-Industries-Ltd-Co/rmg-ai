@@ -100,6 +100,35 @@
   .conv-item .x { background:transparent; border:none; color:var(--muted); cursor:pointer; flex:none; font-size:12px; padding:2px 3px; }
   .conv-item .x:hover { color:var(--gold); }
   .conv-acts { display:flex; gap:1px; flex:none; }
+  /* usage / cost drawer */
+  #usage { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; z-index:20; }
+  #usage.open { display:block; }
+  #usage .sheet { position:absolute; right:0; top:0; bottom:0; width:min(760px,96vw); background:var(--panel); border-left:1px solid var(--line); padding:18px; overflow-y:auto; padding-top:max(18px,env(safe-area-inset-top)); }
+  #usage h3 { margin:0 0 4px; }
+  .usage-note { font-size:11px; color:var(--muted); margin:0 0 14px; }
+  .usage-meta { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px; }
+  .usage-tile { background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:10px 14px; min-width:120px; }
+  .usage-tile .n { font-size:20px; font-weight:700; color:var(--gold2); }
+  .usage-tile .l { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
+  .usage-trend { display:flex; align-items:flex-end; gap:3px; height:80px; margin:10px 0 6px; }
+  .usage-bar { flex:1; background:linear-gradient(180deg,var(--gold2),var(--gold)); border-radius:3px 3px 0 0; min-height:2px; }
+  .usage-bar.top { background:linear-gradient(180deg,#ff9d6b,#e0562f); }
+  .usage-days { display:flex; justify-content:space-between; font-size:9px; color:var(--muted); margin-bottom:16px; }
+  .usage-top-list { list-style:none; margin:0 0 18px; padding:0; display:grid; gap:5px; }
+  .usage-top-list li { display:flex; justify-content:space-between; gap:10px; background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:7px 11px; font-size:13px; }
+  .usage-section-label { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--gold); margin:4px 0 8px; }
+  .usage-project { border:1px solid var(--line); border-radius:10px; margin-bottom:8px; overflow:hidden; }
+  .usage-project-head { display:flex; align-items:center; justify-content:space-between; padding:11px 13px; cursor:pointer; background:var(--bg); gap:10px; }
+  .usage-project-head .name { font-weight:600; display:flex; align-items:center; gap:8px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .usage-project-head .cost { color:var(--gold2); font-weight:700; flex:none; }
+  .usage-project-head .arrow { color:var(--muted); transition:transform .15s; display:inline-block; }
+  .usage-project.open .arrow { transform:rotate(90deg); }
+  .usage-project-body { display:none; padding:8px 13px 12px; }
+  .usage-project.open .usage-project-body { display:block; }
+  .usage-feature-row { display:flex; justify-content:space-between; gap:10px; font-size:13px; padding:5px 0; border-bottom:1px solid var(--line); }
+  .usage-feature-row:last-child { border-bottom:none; }
+  .usage-feature-row .l { color:var(--muted); }
+  .not-reporting { color:var(--muted); font-size:12px; padding:8px 0; }
 </style>
 </head>
 <body>
@@ -147,6 +176,7 @@
       <button type="button" class="ibtn" id="newChatTop" title="New chat" style="display:none">➕</button>
       <button type="button" class="ibtn" id="convBtn" title="Chats" style="display:none">💬</button>
       <button type="button" class="ibtn" id="memBtn" title="Memory" style="display:none">🧠</button>
+      <button type="button" class="ibtn" id="usageBtn" title="Usage &amp; cost" style="display:none">$</button>
     </div>
     <div class="model-row" id="modelRow" style="display:none">
       <select id="modelPicker" title="Model for next message"></select>
@@ -188,6 +218,18 @@
   <ul class="mem-list" id="memList"></ul>
 </div></div>
 
+<div id="usage"><div class="sheet">
+  <h3>$ Usage &amp; Cost</h3>
+  <p class="usage-note" id="usageNote"></p>
+  <div class="usage-meta" id="usageMeta"></div>
+  <div class="usage-trend" id="usageTrend"></div>
+  <div class="usage-days" id="usageDays"></div>
+  <div class="usage-section-label">Top usage days</div>
+  <ul class="usage-top-list" id="usageTopDays"></ul>
+  <div class="usage-section-label">By project</div>
+  <div id="usageProjects"></div>
+</div></div>
+
 <audio id="audio" hidden></audio>
 
 <script>
@@ -206,8 +248,8 @@ async function api(path, opts={}) {
   }
   return r;
 }
-function showLogin(){ $('#login').style.display='flex'; $('#home').style.display='none'; $('#app').style.display='none'; ['newChatTop','convBtn','memBtn','outBtn'].forEach(id=>$('#'+id).style.display='none'); }
-function showApp(email){ $('#login').style.display='none'; ['newChatTop','convBtn','memBtn','outBtn'].forEach(id=>$('#'+id).style.display=''); if(email) $('#outBtn').title='Sign out ('+email+')'; initChats(); showHome(); }
+function showLogin(){ $('#login').style.display='flex'; $('#home').style.display='none'; $('#app').style.display='none'; ['newChatTop','convBtn','memBtn','usageBtn','outBtn'].forEach(id=>$('#'+id).style.display='none'); }
+function showApp(email){ $('#login').style.display='none'; ['newChatTop','convBtn','memBtn','usageBtn','outBtn'].forEach(id=>$('#'+id).style.display=''); if(email) $('#outBtn').title='Sign out ('+email+')'; initChats(); showHome(); }
 function showHome(){ $('#login').style.display='none'; $('#app').style.display='none'; $('#home').style.display='flex'; loadInspiration(); }
 function enterChat(){ $('#login').style.display='none'; $('#home').style.display='none'; $('#app').style.display='flex'; $('#log').scrollTop=$('#log').scrollHeight; }
 
@@ -370,15 +412,32 @@ async function send(text){
 }
 
 // mic -> transcribe -> auto-send
+// Chrome/Android record webm(Opus); Safari/iOS doesn't support webm at all and records
+// mp4(AAC) instead. Whisper picks its decoder from the filename extension, so the upload
+// must be labeled with whatever the browser actually recorded, not a hardcoded guess.
+function pickMicMime(){
+  const cands=['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/mpeg'];
+  if(typeof MediaRecorder==='undefined'||typeof MediaRecorder.isTypeSupported!=='function') return undefined;
+  return cands.find(t=>MediaRecorder.isTypeSupported(t));
+}
+function micExt(mimeType){
+  const t=(mimeType||'').toLowerCase();
+  if(t.includes('mp4')||t.includes('m4a')) return 'mp4';
+  if(t.includes('mpeg')||t.includes('mp3')) return 'mp3';
+  if(t.includes('wav')) return 'wav';
+  return 'webm';
+}
 async function toggleMic(){
   if(recorder){ recorder.stop(); return; }
   try {
     const stream=await navigator.mediaDevices.getUserMedia({audio:true});
-    recorder=new MediaRecorder(stream); chunks=[];
+    const preferred=pickMicMime();
+    recorder=preferred?new MediaRecorder(stream,{mimeType:preferred}):new MediaRecorder(stream); chunks=[];
     recorder.ondataavailable=e=>e.data.size&&chunks.push(e.data);
-    recorder.onstop=async()=>{ stream.getTracks().forEach(t=>t.stop()); $('#mic').classList.remove('rec'); recorder=null;
-      const blob=new Blob(chunks,{type:'audio/webm'}); if(blob.size<1500) return;
-      const fd=new FormData(); fd.append('file',blob,'speech.webm');
+    recorder.onstop=async()=>{ stream.getTracks().forEach(t=>t.stop()); $('#mic').classList.remove('rec');
+      const mimeType=recorder.mimeType||preferred||'audio/webm'; recorder=null;
+      const blob=new Blob(chunks,{type:mimeType}); if(blob.size<1500) return;
+      const fd=new FormData(); fd.append('file',blob,'speech.'+micExt(mimeType));
       try{ const r=await api('/console/listen',{method:'POST',body:fd}); const d=await r.json(); if(d.text&&d.text.trim()) send(d.text); }catch(e){}
     };
     recorder.start(); $('#mic').classList.add('rec');
@@ -409,6 +468,72 @@ async function loadMem(){ try{ const r=await api('/console/memory'); const d=awa
     items.forEach(m=>ul.appendChild(memItem(m))); });
  }catch(e){} }
 
+// usage & cost drawer — every PIAAR project (even $0/"not reporting" ones), collapsible
+// per-project breakdown, a hand-rolled bar-chart trend, and top-usage-day callouts.
+function fmtUsd(n){ return '$'+(parseFloat(n)||0).toFixed( (Math.abs(n)<1)?4:2 ); }
+async function loadUsage(){
+  try{
+    const r=await api('/console/usage?days=30'); const d=await r.json();
+    $('#usageNote').textContent=d.rates_note||'';
+
+    const meta=$('#usageMeta'); meta.innerHTML='';
+    [['Total ('+d.days+'d)', fmtUsd(d.grand_total_usd)], ['Avg / day', fmtUsd(d.avg_daily_usd)]].forEach(([l,n])=>{
+      const el=document.createElement('div'); el.className='usage-tile';
+      el.innerHTML='<div class="n">'+n+'</div><div class="l">'+l+'</div>'; meta.appendChild(el);
+    });
+
+    const daily=d.daily||[];
+    const max=Math.max(1,...daily.map(x=>parseFloat(x.cost_usd)||0));
+    const topSet=new Set((d.top_days||[]).map(x=>x.day));
+    const trend=$('#usageTrend'); trend.innerHTML='';
+    daily.forEach(x=>{
+      const h=Math.max(2,Math.round((parseFloat(x.cost_usd)||0)/max*80));
+      const bar=document.createElement('div'); bar.className='usage-bar'+(topSet.has(x.day)?' top':'');
+      bar.style.height=h+'px'; bar.title=x.day+': '+fmtUsd(x.cost_usd)+' ('+x.calls+' calls)';
+      trend.appendChild(bar);
+    });
+    const daysEl=$('#usageDays'); daysEl.innerHTML='';
+    if(daily.length){
+      const first=document.createElement('span'); first.textContent=daily[0].day;
+      const last=document.createElement('span'); last.textContent=daily[daily.length-1].day;
+      daysEl.appendChild(first); daysEl.appendChild(last);
+    } else { daysEl.innerHTML='<span class="muted">No usage recorded yet in this window.</span>'; }
+
+    const topList=$('#usageTopDays'); topList.innerHTML='';
+    if(!(d.top_days||[]).length){ topList.innerHTML='<li class="muted">No usage recorded yet.</li>'; }
+    (d.top_days||[]).forEach(t=>{
+      const li=document.createElement('li');
+      li.innerHTML='<span>'+t.day+'</span><span>'+fmtUsd(t.cost_usd)+' · '+t.calls+' calls</span>';
+      topList.appendChild(li);
+    });
+
+    const projEl=$('#usageProjects'); projEl.innerHTML='';
+    (d.projects||[]).forEach(p=>{
+      const wrap=document.createElement('div'); wrap.className='usage-project';
+      const head=document.createElement('div'); head.className='usage-project-head';
+      head.innerHTML='<span class="name"><span class="arrow">▸</span>'+p.label+'</span><span class="cost">'+fmtUsd(p.total_cost_usd)+'</span>';
+      head.onclick=()=>wrap.classList.toggle('open');
+      wrap.appendChild(head);
+      const body=document.createElement('div'); body.className='usage-project-body';
+      if(!p.reporting){
+        body.innerHTML='<div class="not-reporting">Not yet reporting usage into this dashboard.</div>';
+      } else {
+        (p.breakdown||[]).forEach(b=>{
+          const row=document.createElement('div'); row.className='usage-feature-row';
+          const bits=[];
+          if(b.input_tokens||b.output_tokens) bits.push((b.input_tokens||0)+' in / '+(b.output_tokens||0)+' out tok');
+          if(b.audio_seconds) bits.push(Math.round(b.audio_seconds)+'s audio');
+          if(b.characters) bits.push(b.characters+' chars');
+          row.innerHTML='<span class="l">'+b.feature+' · '+b.provider+(b.model?' ('+b.model+')':'')+' · '+b.calls+' calls'+(bits.length?' · '+bits.join(', '):'')+'</span><span>'+fmtUsd(b.cost_usd)+'</span>';
+          body.appendChild(row);
+        });
+        if(!(p.breakdown||[]).length) body.innerHTML='<div class="not-reporting">No usage in this window.</div>';
+      }
+      wrap.appendChild(body); projEl.appendChild(wrap);
+    });
+  }catch(e){}
+}
+
 function resizeMsg(){ const t=$('#msg'); t.style.height='auto'; t.style.height=Math.min(t.scrollHeight,parseInt(getComputedStyle(t).maxHeight))+'px'; }
 
 // wires
@@ -430,6 +555,8 @@ $('#newFolder').addEventListener('click',()=>{ const f=prompt('New project folde
 $('#speakToggle').addEventListener('click',()=>{autoSpeak=!autoSpeak; $('#speakToggle').classList.toggle('off',!autoSpeak); $('#speakToggle').title=autoSpeak?'Speaking replies aloud — tap to mute':'Replies muted — tap to speak aloud';});
 $('#memBtn').addEventListener('click',()=>{ $('#mem').classList.add('open'); loadMem(); });
 $('#mem').addEventListener('click',e=>{ if(e.target.id==='mem') $('#mem').classList.remove('open'); });
+$('#usageBtn').addEventListener('click',()=>{ $('#usage').classList.add('open'); loadUsage(); });
+$('#usage').addEventListener('click',e=>{ if(e.target.id==='usage') $('#usage').classList.remove('open'); });
 $('#memAdd').addEventListener('click',async()=>{ const v=$('#memIn').value.trim(); if(!v) return; await api('/console/memory',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:v})}); $('#memIn').value=''; loadMem(); });
 $('#outBtn').addEventListener('click',async()=>{ await fetch('/auth/logout',{method:'POST',credentials:'same-origin'}); showLogin(); });
 document.querySelectorAll('.starter').forEach(b=>b.addEventListener('click',()=>send(b.textContent)));
