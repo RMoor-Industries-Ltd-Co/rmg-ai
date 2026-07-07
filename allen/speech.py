@@ -57,7 +57,16 @@ def transcribe(
         data={"model": "whisper-1", "response_format": "verbose_json"},
         timeout=120,
     )
-    resp.raise_for_status()
+    if not resp.ok:
+        # OpenAI's actual error (rate_limit_exceeded vs insufficient_quota vs invalid key, etc.)
+        # lives in the JSON body — raise_for_status() alone discards it.
+        try:
+            detail = resp.json().get("error", {})
+            msg = detail.get("message") or resp.text[:300]
+            code = detail.get("code") or resp.status_code
+        except Exception:
+            msg, code = resp.text[:300], resp.status_code
+        raise RuntimeError(f"OpenAI Whisper error [{code}]: {msg}")
     data = resp.json()
     try:
         from . import usage
