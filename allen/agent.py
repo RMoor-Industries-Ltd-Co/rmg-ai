@@ -176,7 +176,13 @@ def respond_agentic(
         old = llm.model
         llm.model = model
         try:
-            return llm.run_agent(system, messages, tools, runner, max_rounds=6, max_tokens=max_tokens)
+            return llm.run_agent(
+                system, messages, tools, runner, max_rounds=6, max_tokens=max_tokens,
+                namespace=namespace, feature="allen_agent",
+            )
         finally:
             llm.model = old
-    return llm.run_agent(system, messages, tools, runner, max_rounds=6, max_tokens=max_tokens)
+    return llm.run_agent(
+        system, messages, tools, runner, max_rounds=6, max_tokens=max_tokens,
+        namespace=namespace, feature="allen_agent",
+    )

@@ -3,7 +3,7 @@ import logging
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import Response, PlainTextResponse
 
-from . import brands, chat, db, docs, emotion, meeting, metadata, scheduler, scripts, speech, topics, web
+from . import brands, chat, db, docs, emotion, meeting, metadata, scheduler, scripts, speech, topics, usage, web
 from .config import settings
 from .models import (
     ChatRequest,
@@ -23,6 +23,7 @@ from .models import (
     SpeakRequest,
     TopicsRequest,
     TopicsResponse,
+    UsageLogRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -217,7 +218,7 @@ def post_meeting(req: MeetingRequest) -> MeetingResponse:
 
 
 @app.post("/chat", response_model=ChatResponse, dependencies=[Depends(require_key)])
-def post_chat(req: ChatRequest) -> ChatResponse:
+def post_chat(req: ChatRequest, project: dict = Depends(current_project)) -> ChatResponse:
     """Talk to ALLEN. Reply is written to be spoken aloud (pair with /speak)."""
     if not settings.llm_ready:
         raise HTTPException(503, "LLM not configured (set ANTHROPIC_API_KEY)")
@@ -229,6 +230,7 @@ def post_chat(req: ChatRequest) -> ChatResponse:
             [m.model_dump() for m in req.history],
             req.max_tokens,
             req.context,
+            namespace=project["namespace"],
         )
     except Exception as exc:
         raise HTTPException(502, f"chat error: {exc}") from exc
@@ -260,26 +262,48 @@ def post_metadata(req: MetadataRequest) -> MetadataResponse:
 
 
 @app.post("/speak", dependencies=[Depends(require_key)])
-def speak(req: SpeakRequest) -> Response:
+def speak(req: SpeakRequest, project: dict = Depends(current_project)) -> Response:
     if not settings.tts_ready:
         raise HTTPException(503, "TTS not configured (set ELEVENLABS_API_KEY)")
     try:
-        audio = speech.synthesize(req.text, req.voice_id, req.model_id, req.stability)
+        audio = speech.synthesize(
+            req.text, req.voice_id, req.model_id, req.stability,
+            namespace=project["namespace"], feature="tts",
+        )
     except Exception as exc:
         raise HTTPException(502, f"TTS error: {exc}") from exc
     return Response(content=audio, media_type="audio/mpeg")
 
 
 @app.post("/listen", dependencies=[Depends(require_key)])
-async def listen(file: UploadFile = File(...)) -> dict[str, str]:
+async def listen(file: UploadFile = File(...), project: dict = Depends(current_project)) -> dict[str, str]:
     if not settings.stt_ready:
         raise HTTPException(503, "STT not configured (set OPENAI_API_KEY)")
     audio = await file.read()
     try:
-        text = speech.transcribe(audio, file.filename or "audio.wav")
+        text = speech.transcribe(audio, file.filename or "audio.wav", namespace=project["namespace"], feature="dictate")
     except Exception as exc:
         raise HTTPException(502, f"STT error: {exc}") from exc
     return {"text": text}
+
+
+# ---- usage & cost tracking ("$" console dashboard) ----
+@app.post("/usage/log", dependencies=[Depends(require_admin)])
+def usage_log(req: UsageLogRequest) -> dict:
+    """External ingestion — lets another PIAAR service report its own usage so the console
+    dashboard can grow to cover the whole ecosystem, not just ALLEN's own calls."""
+    db.insert_usage(
+        req.project, req.namespace or "", req.feature, req.provider, req.model,
+        input_tokens=req.input_tokens, output_tokens=req.output_tokens,
+        audio_seconds=req.audio_seconds, characters=req.characters,
+        cost_usd=req.cost_usd, meta=req.meta,
+    )
+    return {"ok": True}
+
+
+@app.get("/usage/dashboard", dependencies=[Depends(require_admin)])
+def usage_dashboard(days: int = 30) -> dict:
+    return usage.dashboard(days=days)
 
 
 @app.post("/whatsapp/inbound")

@@ -107,4 +107,8 @@ Never paste real secret values into chat or any committed file.
 | `allen/tools_clickup.py` | ClickUp tools |
 | `allen/tools_notion.py` | Notion tools |
 | `allen/tools_github.py` | GitHub tools — ALLEN's allen-piaar-control-bot App identity across the RMoor-Industries-Ltd-Co org |
+| `allen/tools_market_feed.py` | ALLIE's feed-watch scans (yfinance, YouTube) for "hot instrument" signals |
+| `allen/feed_watch.py` | Feed-watch job — scans configured tickers, pushes signals to Thoth (axis-tekhen) |
+| `allen/scheduler.py` | Background scheduler — daily WhatsApp report + feed-watch interval job |
+| `allen/usage.py` | Usage & cost tracking — PIAAR project registry, rate tables, the "$" console dashboard's data source |
 | `allen/config.py` | Pydantic settings (all env vars) |

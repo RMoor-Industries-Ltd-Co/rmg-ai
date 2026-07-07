@@ -22,31 +22,58 @@ def _send_report() -> None:
         logger.error("[scheduler] daily report failed: %s", exc)
 
 
+def _run_feed_watch() -> None:
+    from . import feed_watch
+
+    logger.info("[scheduler] firing feed watch")
+    try:
+        feed_watch.run_feed_watch()
+    except Exception as exc:
+        logger.error("[scheduler] feed watch failed: %s", exc)
+
+
 def start() -> None:
-    """Start the cron scheduler. No-ops if WhatsApp is not configured."""
+    """Start the cron scheduler. Each job independently no-ops if its own
+    prerequisites aren't configured (WhatsApp for the daily report, Thoth/
+    ticker config for feed watch) — one being unready doesn't block the other."""
     global _scheduler
 
-    if not settings.whatsapp_ready:
-        logger.info("[scheduler] WhatsApp not configured — scheduler not started")
-        return
-
-    try:
-        hour, minute = (int(p) for p in settings.daily_report_time.split(":", 1))
-    except (ValueError, AttributeError):
-        logger.error(
-            "[scheduler] invalid DAILY_REPORT_TIME '%s' — expected HH:MM, scheduler not started",
-            settings.daily_report_time,
-        )
-        return
-
+    jobs_added = False
     _scheduler = BackgroundScheduler()
-    _scheduler.add_job(_send_report, "cron", hour=hour, minute=minute, id="daily_report")
+
+    if settings.whatsapp_ready:
+        try:
+            hour, minute = (int(p) for p in settings.daily_report_time.split(":", 1))
+            _scheduler.add_job(_send_report, "cron", hour=hour, minute=minute, id="daily_report")
+            jobs_added = True
+            logger.info(
+                "[scheduler] daily report scheduled at %02d:%02d server local time", hour, minute
+            )
+        except (ValueError, AttributeError):
+            logger.error(
+                "[scheduler] invalid DAILY_REPORT_TIME '%s' — expected HH:MM, daily report not scheduled",
+                settings.daily_report_time,
+            )
+    else:
+        logger.info("[scheduler] WhatsApp not configured — daily report not scheduled")
+
+    if settings.feed_watch_ready:
+        _scheduler.add_job(
+            _run_feed_watch, "interval", minutes=settings.feed_watch_interval_minutes, id="feed_watch"
+        )
+        jobs_added = True
+        logger.info(
+            "[scheduler] feed watch scheduled every %d minute(s)", settings.feed_watch_interval_minutes
+        )
+    else:
+        logger.info("[scheduler] feed watch not configured (needs FEED_WATCH_ENABLED, tickers, Thoth URL/token)")
+
+    if not jobs_added:
+        _scheduler = None
+        logger.info("[scheduler] no jobs configured — scheduler not started")
+        return
+
     _scheduler.start()
-    logger.info(
-        "[scheduler] daily report scheduled at %02d:%02d server local time",
-        hour,
-        minute,
-    )
 
 
 def stop() -> None:
