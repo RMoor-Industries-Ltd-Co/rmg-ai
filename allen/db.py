@@ -143,6 +143,25 @@ def init_db() -> None:
                 created_at timestamptz DEFAULT now()
             );
             CREATE INDEX IF NOT EXISTS usage_log_project_idx ON usage_log (project, created_at DESC);
+
+            -- Virtual forms — structured "slot-filling" tools ALLEN uses for common
+            -- requests (schedule an appointment, open a PIAAR initiative, etc). Each row
+            -- becomes one dynamically-generated tool (submit_form_<key>) with its own
+            -- required fields, so Claude's own tool-calling enforces "ask if missing"
+            -- rather than guessing. created_by 'system' = seeded starter forms;
+            -- 'allen' = ALLEN defined it himself via define_virtual_form.
+            CREATE TABLE IF NOT EXISTS virtual_forms (
+                id text PRIMARY KEY,
+                namespace text NOT NULL,
+                key text NOT NULL,
+                label text NOT NULL,
+                domain text NOT NULL DEFAULT 'personal',
+                action text NOT NULL DEFAULT 'note',
+                fields jsonb NOT NULL,
+                created_by text NOT NULL DEFAULT 'system',
+                created_at timestamptz DEFAULT now()
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS virtual_forms_ns_key_idx ON virtual_forms (namespace, key);
             """
         )
 
@@ -571,3 +590,46 @@ def usage_daily(project: Optional[str] = None, days: int = 30) -> list[dict]:
             args,
         )
         return list(cur.fetchall())
+
+
+# ---- virtual forms (ALLEN's structured "slot-filling" tools) ----
+def list_forms(namespace: str) -> list[dict]:
+    if not db_ready():
+        return []
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT key, label, domain, action, fields, created_by, created_at FROM virtual_forms "
+            "WHERE namespace = %s ORDER BY created_at",
+            (namespace,),
+        )
+        return list(cur.fetchall())
+
+
+def get_form(namespace: str, key: str) -> Optional[dict]:
+    if not db_ready():
+        return None
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT key, label, domain, action, fields, created_by FROM virtual_forms "
+            "WHERE namespace = %s AND key = %s",
+            (namespace, key),
+        )
+        return cur.fetchone()
+
+
+def upsert_form(
+    namespace: str, key: str, label: str, domain: str, action: str,
+    fields: list, created_by: str = "system",
+) -> dict:
+    fid = f"form-{namespace}-{key}"
+    with _cursor() as cur:
+        cur.execute(
+            "INSERT INTO virtual_forms (id, namespace, key, label, domain, action, fields, created_by) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
+            "ON CONFLICT (namespace, key) DO UPDATE SET "
+            "label = EXCLUDED.label, domain = EXCLUDED.domain, action = EXCLUDED.action, "
+            "fields = EXCLUDED.fields "
+            "RETURNING key, label, domain, action, fields, created_by",
+            (fid, namespace, key, label, domain, action, json.dumps(fields), created_by),
+        )
+        return cur.fetchone()
