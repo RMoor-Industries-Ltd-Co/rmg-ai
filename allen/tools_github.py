@@ -192,13 +192,23 @@ def _get_pull(repo: str, number: int) -> str:
     )
 
 
+def read_file_full(repo: str, path: str, ref: str | None = None) -> str | None:
+    """Full, untruncated file contents — for read-modify-write callers (e.g. forms.py's
+    github_initiative dispatch). Returns None for a directory listing."""
+    params = {"ref": ref} if ref else {}
+    data = _get(f"/repos/{ORG}/{repo}/contents/{path}", params)
+    if isinstance(data, list):
+        return None
+    return base64.b64decode(data["content"]).decode("utf-8", errors="replace")
+
+
 def _read_file(repo: str, path: str, ref: str | None) -> str:
     params = {"ref": ref} if ref else {}
     data = _get(f"/repos/{ORG}/{repo}/contents/{path}", params)
     if isinstance(data, list):
         return f"{path} is a directory: " + ", ".join(e["name"] for e in data)
     content = base64.b64decode(data["content"]).decode("utf-8", errors="replace")
-    return content[:8000]
+    return content[:8000]  # display-facing tool result — conversational, truncation is fine here
 
 
 def _create_issue(args: dict) -> str:
