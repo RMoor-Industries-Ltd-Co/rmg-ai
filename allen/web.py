@@ -19,7 +19,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, Response, Upl
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.responses import Response as RawResponse
 
-from . import agent, classify, db, google_auth, media, memory, speech, tools_calendar, usage
+from . import agent, classify, db, google_auth, media, memory, speech, tech_accounts, tools_calendar, usage
 from .config import settings
 
 router = APIRouter()
@@ -400,6 +400,24 @@ def console_usage(request: Request, days: int = 30) -> dict:
     console (no separate admin key needed; the console is already single-user-gated)."""
     _session_user(request)
     return usage.dashboard(days=days)
+
+
+@router.post("/console/usage/accounts/{account_key}/cycle")
+def console_usage_set_cycle(request: Request, account_key: str, body: dict) -> dict:
+    """Set a flat-rate technology account's billing-cycle renewal day (1-28), so its
+    countdown in the dashboard reflects when it actually renews instead of being unset."""
+    user = _session_user(request)
+    day = (body or {}).get("day")
+    try:
+        day = int(day)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "day must be an integer 1-28")
+    try:
+        tech_accounts.set_cycle_day(account_key, day)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    db.add_audit(user["namespace"], "rahm", "set_tech_account_cycle", f"{account_key}: day {day}", "ok")
+    return {"ok": True}
 
 
 @router.post("/console/attach")
