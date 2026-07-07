@@ -29,14 +29,39 @@ def synthesize(
         json=body,
         timeout=180,
     )
-    resp.raise_for_status()
+    if not resp.ok:
+        _record_failure(project, "elevenlabs", f"[{resp.status_code}] {resp.text[:300]}")
+        resp.raise_for_status()
     try:
         from . import usage
 
         usage.log_tts(len(text), model, project=project, namespace=namespace, feature=feature)
     except Exception:
         pass  # usage tracking must never break the actual synthesis
+    _clear_failure(project, "elevenlabs")
     return resp.content
+
+
+def _record_failure(project: str, usage_provider: str, message: str) -> None:
+    """So a currently-broken metered account (quota exhausted, revoked key, ...) shows up
+    in the "$" dashboard even before/without a new usage_log row — that table only records
+    successful calls, so a blocked account with prior history would otherwise still read
+    as healthy."""
+    try:
+        from . import tech_accounts
+
+        tech_accounts.record_error(project, usage_provider, message)
+    except Exception:
+        pass  # dashboard error tracking must never break the actual call's own error handling
+
+
+def _clear_failure(project: str, usage_provider: str) -> None:
+    try:
+        from . import tech_accounts
+
+        tech_accounts.clear_error(project, usage_provider)
+    except Exception:
+        pass
 
 
 def transcribe(
@@ -66,6 +91,7 @@ def transcribe(
             code = detail.get("code") or resp.status_code
         except Exception:
             msg, code = resp.text[:300], resp.status_code
+        _record_failure(project, "openai", f"[{code}] {msg}")
         raise RuntimeError(f"OpenAI Whisper error [{code}]: {msg}")
     data = resp.json()
     try:
@@ -74,4 +100,5 @@ def transcribe(
         usage.log_stt(float(data.get("duration") or 0), project=project, namespace=namespace, feature=feature)
     except Exception:
         pass  # usage tracking must never break the actual transcription
+    _clear_failure(project, "openai")
     return data.get("text", "")
