@@ -446,9 +446,15 @@ async function toggleMic(){
     recorder.ondataavailable=e=>e.data.size&&chunks.push(e.data);
     recorder.onstop=async()=>{ stream.getTracks().forEach(t=>t.stop()); $('#mic').classList.remove('rec');
       const mimeType=recorder.mimeType||preferred||'audio/webm'; recorder=null;
-      const blob=new Blob(chunks,{type:mimeType}); if(blob.size<1500) return;
+      const blob=new Blob(chunks,{type:mimeType});
+      if(blob.size<1500){ $('#err').textContent='Recording too short — hold the mic a bit longer.'; return; }
       const fd=new FormData(); fd.append('file',blob,'speech.'+micExt(mimeType));
-      try{ const r=await api('/console/listen',{method:'POST',body:fd}); const d=await r.json(); if(d.text&&d.text.trim()) send(d.text); }catch(e){}
+      try{
+        const r=await api('/console/listen',{method:'POST',body:fd});
+        const d=await r.json();
+        if(d.text&&d.text.trim()) send(d.text);
+        else $('#err').textContent='Didn\'t catch that — try again.';
+      }catch(e){ if(e.message!=='login') $('#err').textContent=String(e); }
     };
     recorder.start(); $('#mic').classList.add('rec');
   } catch(e){ $('#err').textContent='Mic unavailable.'; }

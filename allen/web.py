@@ -385,7 +385,12 @@ async def console_listen(request: Request, file: UploadFile = File(...)) -> dict
     if not settings.stt_ready:
         raise HTTPException(503, "STT not configured")
     audio = await file.read()
-    text = speech.transcribe(audio, file.filename or "audio.webm", namespace=user["namespace"], feature="dictate")
+    if not audio:
+        raise HTTPException(400, "empty recording")
+    try:
+        text = speech.transcribe(audio, file.filename or "audio.webm", namespace=user["namespace"], feature="dictate")
+    except Exception as exc:
+        raise HTTPException(500, f"transcription failed: {exc}") from exc
     return {"text": text}
 
 
