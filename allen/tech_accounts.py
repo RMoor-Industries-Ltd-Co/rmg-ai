@@ -93,7 +93,7 @@ def clear_error(project: str, usage_provider: str) -> None:
         pass
 
 
-def _get_error(project: str, usage_provider: str) -> "dict | None":
+def get_error(project: str, usage_provider: str) -> "dict | None":
     raw = db.get_config(_error_config_key(project, usage_provider))
     if not raw:
         return None
@@ -151,7 +151,7 @@ def overview(usage_rows: list[dict]) -> list[dict]:
             cost = by_project_provider.get((acc["project"], acc["usage_provider"]), 0.0)
             entry["reporting"] = cost > 0
             entry["period_cost_usd"] = round(cost, 4)
-            err = _get_error(acc["project"], acc["usage_provider"])
+            err = get_error(acc["project"], acc["usage_provider"])
             if err:
                 entry["last_error"] = err
         elif acc["billing_model"] == "flat":
