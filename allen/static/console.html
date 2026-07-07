@@ -58,6 +58,10 @@
   .ibtn.off { opacity:.4; }
   .mic.rec { background:#3a1d1d; border-color:#c0392b; color:#ff6b6b; animation:pulse 1.2s infinite; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.55} }
+  /* mic health — a yellow hue means STT has a problem (quota, config, ...); the button
+     is inert while it's showing (no red recording state) until the fault clears. */
+  .mic.warn { border-color:var(--gold); box-shadow:0 0 0 2px rgba(217,179,90,.35); color:var(--gold2); cursor:not-allowed; }
+  .mic.warn.rec { animation:none; }
   /* staged-file chips */
   #staged { display:flex; flex-wrap:wrap; gap:6px; padding:0 2px; }
   #staged:empty { display:none; }
@@ -275,7 +279,8 @@ async function api(path, opts={}) {
   return r;
 }
 function showLogin(){ $('#login').style.display='flex'; $('#home').style.display='none'; $('#app').style.display='none'; ['newChatTop','convBtn','memBtn','usageBtn','outBtn'].forEach(id=>$('#'+id).style.display='none'); }
-function showApp(email){ $('#login').style.display='none'; ['newChatTop','convBtn','memBtn','usageBtn','outBtn'].forEach(id=>$('#'+id).style.display=''); if(email) $('#outBtn').title='Sign out ('+email+')'; initChats(); showHome(); }
+function showApp(email){ $('#login').style.display='none'; ['newChatTop','convBtn','memBtn','usageBtn','outBtn'].forEach(id=>$('#'+id).style.display=''); if(email) $('#outBtn').title='Sign out ('+email+')'; initChats(); showHome();
+  checkMicHealth(); if(!window._micHealthTimer) window._micHealthTimer=setInterval(checkMicHealth, 120000); }
 function showHome(){ $('#login').style.display='none'; $('#app').style.display='none'; $('#home').style.display='flex'; loadInspiration(); }
 function enterChat(){ $('#login').style.display='none'; $('#home').style.display='none'; $('#app').style.display='flex'; $('#log').scrollTop=$('#log').scrollHeight; }
 
@@ -437,6 +442,18 @@ async function send(text){
   } catch(e){ thinking.remove(); if(e.message!=='login') $('#err').textContent=String(e); }
 }
 
+// mic health — a yellow hue means STT (Whisper) has a live problem (quota exhausted,
+// not configured, ...); the mic stays inert (no red recording state) until it clears.
+// Checked on load, on an interval, and right after a failed transcription so the
+// indicator reflects reality without Rahm having to open the $ dashboard to find out.
+let micHealthy = true, micHealthMsg = '';
+async function checkMicHealth(){
+  try{
+    const r=await api('/console/mic-health'); const d=await r.json();
+    micHealthy=!!d.ok; micHealthMsg=(d.error&&d.error.message)||'';
+    $('#mic').classList.toggle('warn', !micHealthy);
+  }catch(e){}
+}
 // mic -> transcribe -> auto-send
 // Chrome/Android record webm(Opus); Safari/iOS doesn't support webm at all and records
 // mp4(AAC) instead. Whisper picks its decoder from the filename extension, so the upload
@@ -455,6 +472,7 @@ function micExt(mimeType){
 }
 async function toggleMic(){
   if(recorder){ recorder.stop(); return; }
+  if(!micHealthy){ $('#err').textContent='Mic is unavailable — '+(micHealthMsg||'STT has a problem right now')+'.'; return; }
   try {
     const stream=await navigator.mediaDevices.getUserMedia({audio:true});
     const preferred=pickMicMime();
@@ -470,7 +488,7 @@ async function toggleMic(){
         const d=await r.json();
         if(d.text&&d.text.trim()) send(d.text);
         else $('#err').textContent='Didn\'t catch that — try again.';
-      }catch(e){ if(e.message!=='login') $('#err').textContent=String(e); }
+      }catch(e){ if(e.message!=='login') $('#err').textContent=String(e); checkMicHealth(); }
     };
     recorder.start(); $('#mic').classList.add('rec');
   } catch(e){ $('#err').textContent='Mic unavailable.'; }

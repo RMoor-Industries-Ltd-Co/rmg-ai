@@ -394,6 +394,19 @@ async def console_listen(request: Request, file: UploadFile = File(...)) -> dict
     return {"text": text}
 
 
+@router.get("/console/mic-health")
+def console_mic_health(request: Request) -> dict:
+    """Whether ALLEN's mic (Whisper STT) is currently healthy — lets the console disable
+    the mic button and show a warning instead of recording into a call that's just going
+    to fail (e.g. OpenAI quota exhausted). Not STT-configured at all counts as unhealthy
+    too, same as a live error would."""
+    _session_user(request)
+    if not settings.stt_ready:
+        return {"ok": False, "error": {"at": None, "message": "STT not configured"}}
+    err = tech_accounts.get_error("rmg-ai", "openai")
+    return {"ok": err is None, "error": err}
+
+
 @router.get("/console/usage")
 def console_usage(request: Request, days: int = 30) -> dict:
     """Data source for the "$" dashboard panel — session-gated same as the rest of the
