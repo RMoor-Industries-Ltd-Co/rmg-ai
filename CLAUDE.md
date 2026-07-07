@@ -111,4 +111,5 @@ Never paste real secret values into chat or any committed file.
 | `allen/feed_watch.py` | Feed-watch job — scans configured tickers, pushes signals to Thoth (axis-tekhen) |
 | `allen/scheduler.py` | Background scheduler — daily WhatsApp report + feed-watch interval job |
 | `allen/usage.py` | Usage & cost tracking — PIAAR project registry, rate tables, the "$" console dashboard's data source |
+| `allen/tech_accounts.py` | Technology-account registry for the "$" dashboard — metered accounts cross-reference usage_log, flat-rate subscriptions show a billing-cycle countdown from a renewal day set via the console |
 | `allen/config.py` | Pydantic settings (all env vars) |

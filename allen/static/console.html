@@ -135,6 +135,19 @@
   .usage-feature-row:last-child { border-bottom:none; }
   .usage-feature-row .l { color:var(--muted); }
   .not-reporting { color:var(--muted); font-size:12px; padding:8px 0; }
+  .usage-accounts-label { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:10px 0 4px; }
+  .acct-row { display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:12.5px; padding:5px 0; border-bottom:1px solid var(--line); }
+  .acct-row:last-child { border-bottom:none; }
+  .acct-row .l { color:var(--muted); }
+  .acct-chip { font-size:11px; padding:2px 7px; border-radius:999px; white-space:nowrap; flex:none; }
+  .acct-chip.ok { background:rgba(60,160,100,.15); color:#5fcf8a; }
+  .acct-chip.muted { background:rgba(255,255,255,.06); color:var(--muted); }
+  .acct-chip.warn { background:rgba(200,150,50,.15); color:var(--gold2); }
+  .mini-track { background:var(--panel); border:1px solid var(--line); border-radius:999px; height:6px; overflow:hidden; flex:1; max-width:120px; }
+  .mini-fill { height:100%; background:linear-gradient(90deg,var(--gold),var(--gold2)); }
+  .acct-cycle-set { display:flex; align-items:center; gap:4px; flex:none; }
+  .acct-cycle-set input { width:38px; background:var(--bg); border:1px solid var(--line); border-radius:6px; color:var(--text); font-size:11px; padding:2px 4px; text-align:center; }
+  .acct-cycle-set button { font-size:11px; padding:2px 6px; border-radius:6px; border:1px solid var(--line); background:var(--panel); color:var(--muted); cursor:pointer; }
 </style>
 </head>
 <body>
@@ -562,9 +575,51 @@ async function loadUsage(){
         });
         if(!(p.breakdown||[]).length) body.innerHTML='<div class="not-reporting">No usage in this window.</div>';
       }
+      const acctsForProject=(d.accounts||[]).filter(a=>a.project===p.key);
+      if(acctsForProject.length){
+        const label=document.createElement('div'); label.className='usage-accounts-label'; label.textContent='Technology accounts';
+        body.appendChild(label);
+        acctsForProject.forEach(a=>body.appendChild(renderAcctRow(a)));
+      }
       wrap.appendChild(body); projEl.appendChild(wrap);
     });
   }catch(e){}
+}
+// One line per technology account: metered -> reporting/not this period; flat-rate ->
+// billing-cycle countdown (or an inline day-of-month input if no renewal day is set yet);
+// free/unknown -> a plain label, no status claimed since there's nothing to measure.
+function renderAcctRow(a){
+  const row=document.createElement('div'); row.className='acct-row';
+  const l=document.createElement('span'); l.className='l'; l.textContent=a.label; row.appendChild(l);
+  if(a.billing_model==='metered'){
+    const chip=document.createElement('span'); chip.className='acct-chip '+(a.reporting?'ok':'muted');
+    chip.textContent=a.reporting?fmtUsd(a.period_cost_usd)+' this period':'no usage this period';
+    row.appendChild(chip);
+  } else if(a.billing_model==='free'){
+    const chip=document.createElement('span'); chip.className='acct-chip muted'; chip.textContent='free / no billing';
+    row.appendChild(chip);
+  } else if(a.billing_model==='unknown'){
+    const chip=document.createElement('span'); chip.className='acct-chip muted'; chip.textContent='billing model not confirmed';
+    row.appendChild(chip);
+  } else if(a.cycle){
+    const wrap=document.createElement('span'); wrap.className='acct-cycle-set';
+    const track=document.createElement('span'); track.className='mini-track';
+    const fill=document.createElement('span'); fill.className='mini-fill'; fill.style.width=a.cycle.pct+'%';
+    track.appendChild(fill); wrap.appendChild(track);
+    const days=document.createElement('span'); days.className='acct-chip warn'; days.textContent=a.cycle.days_left+'d left';
+    wrap.appendChild(days); row.appendChild(wrap);
+  } else {
+    const wrap=document.createElement('span'); wrap.className='acct-cycle-set';
+    const input=document.createElement('input'); input.type='number'; input.min=1; input.max=28; input.placeholder='day';
+    const btn=document.createElement('button'); btn.textContent='Set renewal day';
+    btn.onclick=async()=>{
+      const day=parseInt(input.value,10);
+      if(!day||day<1||day>28) return;
+      try{ await api('/console/usage/accounts/'+a.key+'/cycle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({day})}); loadUsage(); }catch(e){}
+    };
+    wrap.appendChild(input); wrap.appendChild(btn); row.appendChild(wrap);
+  }
+  return row;
 }
 
 function resizeMsg(){ const t=$('#msg'); t.style.height='auto'; t.style.height=Math.min(t.scrollHeight,parseInt(getComputedStyle(t).maxHeight))+'px'; }

@@ -98,10 +98,15 @@ def log_tts(
 
 def dashboard(days: int = 30) -> dict:
     """Full scaffold for the '$' console panel: every PIAAR project (even $0 ones), each
-    broken down by feature/provider/model, plus a daily trend series and top usage days."""
+    broken down by feature/provider/model, plus a daily trend series, top usage days,
+    and a technology-account view (metered accounts cross-referenced against this same
+    period's usage, flat-rate accounts shown by billing-cycle countdown instead)."""
+    from . import tech_accounts
+
     days = max(1, min(int(days or 30), 365))
     rows = db.usage_summary(days=days)
     daily = db.usage_daily(days=days)
+    accounts = tech_accounts.overview(rows)
 
     by_project: dict[str, list[dict]] = {}
     totals: dict[str, float] = {}
@@ -140,5 +145,6 @@ def dashboard(days: int = 30) -> dict:
         "projects": projects,
         "daily": daily,
         "top_days": top_days,
+        "accounts": accounts,
         "rates_note": "Costs are ESTIMATES from static published rates, not live provider billing.",
     }
