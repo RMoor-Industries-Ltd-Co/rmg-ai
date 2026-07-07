@@ -143,6 +143,9 @@
   .acct-chip.ok { background:rgba(60,160,100,.15); color:#5fcf8a; }
   .acct-chip.muted { background:rgba(255,255,255,.06); color:var(--muted); }
   .acct-chip.warn { background:rgba(200,150,50,.15); color:var(--gold2); }
+  .acct-chip.err { background:rgba(200,60,60,.15); color:#ff8a8a; }
+  .acct-error-line { font-size:11px; color:#ff8a8a; padding:0 0 6px; border-bottom:1px solid var(--line); }
+  .acct-error-line:last-child { border-bottom:none; }
   .mini-track { background:var(--panel); border:1px solid var(--line); border-radius:999px; height:6px; overflow:hidden; flex:1; max-width:120px; }
   .mini-fill { height:100%; background:linear-gradient(90deg,var(--gold),var(--gold2)); }
   .acct-cycle-set { display:flex; align-items:center; gap:4px; flex:none; }
@@ -589,12 +592,22 @@ async function loadUsage(){
 // billing-cycle countdown (or an inline day-of-month input if no renewal day is set yet);
 // free/unknown -> a plain label, no status claimed since there's nothing to measure.
 function renderAcctRow(a){
+  const frag=document.createDocumentFragment();
   const row=document.createElement('div'); row.className='acct-row';
   const l=document.createElement('span'); l.className='l'; l.textContent=a.label; row.appendChild(l);
   if(a.billing_model==='metered'){
-    const chip=document.createElement('span'); chip.className='acct-chip '+(a.reporting?'ok':'muted');
-    chip.textContent=a.reporting?fmtUsd(a.period_cost_usd)+' this period':'no usage this period';
+    const chip=document.createElement('span');
+    chip.className='acct-chip '+(a.last_error?'err':(a.reporting?'ok':'muted'));
+    chip.textContent=a.last_error?'call failed':(a.reporting?fmtUsd(a.period_cost_usd)+' this period':'no usage this period');
     row.appendChild(chip);
+    if(a.last_error){
+      const errLine=document.createElement('div'); errLine.className='acct-error-line';
+      const mins=Math.max(0,Math.round((Date.now()/1000-a.last_error.at)/60));
+      const ago=mins<1?'just now':(mins<60?mins+'m ago':Math.round(mins/60)+'h ago');
+      errLine.textContent=a.last_error.message+' · '+ago;
+      frag.appendChild(row); frag.appendChild(errLine);
+      return frag;
+    }
   } else if(a.billing_model==='free'){
     const chip=document.createElement('span'); chip.className='acct-chip muted'; chip.textContent='free / no billing';
     row.appendChild(chip);

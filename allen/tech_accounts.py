@@ -65,6 +65,46 @@ def set_cycle_day(account_key: str, day: int) -> None:
     db.set_config(_cycle_config_key(account_key), str(day))
 
 
+def _error_config_key(project: str, usage_provider: str) -> str:
+    return f"tech_account_last_error:{project}:{usage_provider}"
+
+
+def record_error(project: str, usage_provider: str, message: str) -> None:
+    """Called by a metered call site (speech.transcribe/synthesize, etc.) right before it
+    raises, so a currently-blocked account (quota exhausted, revoked key, ...) shows up in
+    the dashboard even though usage_log — which only records successful calls — still has
+    stale 'reporting' history from before it broke."""
+    import time
+
+    try:
+        db.set_config(
+            _error_config_key(project, usage_provider),
+            f"{time.time()}|{(message or '')[:300]}",
+        )
+    except Exception:
+        pass  # error tracking must never break the caller's own error handling
+
+
+def clear_error(project: str, usage_provider: str) -> None:
+    """Called on the next successful call, so a resolved issue stops showing as broken."""
+    try:
+        db.set_config(_error_config_key(project, usage_provider), "")
+    except Exception:
+        pass
+
+
+def _get_error(project: str, usage_provider: str) -> "dict | None":
+    raw = db.get_config(_error_config_key(project, usage_provider))
+    if not raw:
+        return None
+    at_str, _, message = raw.partition("|")
+    try:
+        at = float(at_str)
+    except ValueError:
+        return None
+    return {"at": at, "message": message}
+
+
 def _cycle_status(anchor_day: int) -> dict:
     """Days left / percent elapsed in the current renewal cycle, anchored to a
     day-of-month rather than always the calendar month's 1st."""
@@ -111,6 +151,9 @@ def overview(usage_rows: list[dict]) -> list[dict]:
             cost = by_project_provider.get((acc["project"], acc["usage_provider"]), 0.0)
             entry["reporting"] = cost > 0
             entry["period_cost_usd"] = round(cost, 4)
+            err = _get_error(acc["project"], acc["usage_provider"])
+            if err:
+                entry["last_error"] = err
         elif acc["billing_model"] == "flat":
             anchor = get_cycle_day(acc["key"])
             if anchor:
