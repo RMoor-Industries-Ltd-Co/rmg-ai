@@ -11,6 +11,23 @@ class CreateProjectRequest(BaseModel):
     namespace: str
 
 
+# ---- usage & cost tracking ("$" console dashboard) — external ingestion ----
+class UsageLogRequest(BaseModel):
+    """Lets another PIAAR service (e.g. Cappo Meridian) report its own API usage into
+    ALLEN's shared usage_log, so the console dashboard can grow to cover the ecosystem."""
+    project: str = Field(..., description="PIAAR project key, e.g. 'cappo-meridian'")
+    feature: str = Field(..., description="what the call was for, e.g. 'chat', 'tts', 'dictate'")
+    provider: str = Field(..., description="'anthropic' | 'openai' | 'elevenlabs' | other")
+    model: Optional[str] = None
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+    audio_seconds: Optional[float] = None
+    characters: Optional[int] = None
+    cost_usd: float = 0.0
+    namespace: Optional[str] = None
+    meta: Optional[dict] = None
+
+
 class MemoryRequest(BaseModel):
     content: str
     brand: Optional[str] = None

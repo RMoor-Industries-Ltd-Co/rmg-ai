@@ -8,7 +8,7 @@ for now, is delegate_to_allie. As ALLIE gains ClickUp/Notion tools, ALLEN's reac
 import json
 from typing import Optional
 
-from . import allie, chat, db
+from . import allie, chat, db, forms
 from .llm import get_llm
 
 
@@ -100,7 +100,16 @@ _DELEGATION_NOTE = (
     "or github_comment_issue to flag something for Claude Code to pick up next session — that's the handoff: "
     "you open or comment on an issue in the relevant repo, Claude Code reads it there. You can update file "
     "contents ONLY in rmg-piaar-system (github_update_file) — never on a code repo; you read code everywhere "
-    "but only Claude Code writes it. Write ops are audit-logged."
+    "but only Claude Code writes it. Write ops are audit-logged.\n"
+    "\n"
+    "VIRTUAL FORMS — for structured personal/project/business requests (schedule an appointment, open a "
+    "PIAAR initiative, log a business task, save a reminder, ...), use your submit_form_* tools instead of "
+    "freelancing the details. Call list_virtual_forms if you're unsure what's available — check it before "
+    "assuming a form doesn't exist for something Rahm asked for. If a submit_form_* tool is missing a "
+    "required field from what Rahm told you, ASK him for it — never guess, invent, or leave it blank. If "
+    "none of the existing forms fit a recurring type of request, you may propose defining a new one with "
+    "define_virtual_form — but CONFIRM with Rahm first; only create it once he agrees it's worth having, "
+    "never as a silent background action."
 )
 
 
@@ -129,6 +138,9 @@ def respond_agentic(
         tools += tools_gdrive.TOOLS  # Drive read + CRUD (TOOLS already includes WRITE_TOOLS)
     if settings.github_ready:
         tools += tools_github.TOOLS + tools_github.WRITE_TOOLS  # allen-piaar-control-bot — PIAAR org visibility
+
+    forms.ensure_seed_forms(namespace)
+    tools += forms.build_tool_schemas(namespace) + forms.META_TOOLS
 
     system = chat.build_system(None, None, context) + _DELEGATION_NOTE
     messages = [{"role": "user", "content": chat.build_user(message, history)}]
@@ -168,6 +180,16 @@ def respond_agentic(
             if name in tools_github.WRITE_NAMES:
                 db.add_audit(namespace, "allen", name, json.dumps(inp), res)
             return res
+        if name == "list_virtual_forms":
+            return forms.list_forms_summary(namespace)
+        if name == "define_virtual_form":
+            res = forms.define_form(namespace, inp)
+            db.add_audit(namespace, "allen", name, json.dumps(inp), res)
+            return res
+        if name.startswith("submit_form_"):
+            res = forms.dispatch_submit(namespace, name, inp)
+            db.add_audit(namespace, "allen", name, json.dumps(inp), res)
+            return res
         return f"(unknown tool: {name})"
 
     llm = get_llm()
@@ -176,7 +198,13 @@ def respond_agentic(
         old = llm.model
         llm.model = model
         try:
-            return llm.run_agent(system, messages, tools, runner, max_rounds=6, max_tokens=max_tokens)
+            return llm.run_agent(
+                system, messages, tools, runner, max_rounds=6, max_tokens=max_tokens,
+                namespace=namespace, feature="allen_agent",
+            )
         finally:
             llm.model = old
-    return llm.run_agent(system, messages, tools, runner, max_rounds=6, max_tokens=max_tokens)
+    return llm.run_agent(
+        system, messages, tools, runner, max_rounds=6, max_tokens=max_tokens,
+        namespace=namespace, feature="allen_agent",
+    )

@@ -2,6 +2,7 @@
 keys + namespaces) and namespaced memory, so ALLEN/ALLIE can serve multiple
 projects (Atelier, Axis, Cappo, Relationship Ledger) with isolated data."""
 
+import json
 import secrets
 import time
 from contextlib import contextmanager
@@ -120,6 +121,47 @@ def init_db() -> None:
                 created_at timestamptz DEFAULT now()
             );
             CREATE INDEX IF NOT EXISTS audit_ns_idx ON audit_log (namespace, created_at DESC);
+
+            -- Usage & cost tracking (the "$" console dashboard's source of truth). One row per
+            -- billable API call — Claude (tokens), Whisper (audio seconds), ElevenLabs (characters).
+            -- `project` is a PIAAR repo/product key (see allen/usage.py's PIAAR_PROJECTS); `namespace`
+            -- is ALLEN's own multi-tenant namespace when applicable. cost_usd is an ESTIMATE computed
+            -- at log time from a static rate table, not live provider billing.
+            CREATE TABLE IF NOT EXISTS usage_log (
+                id text PRIMARY KEY,
+                project text NOT NULL,
+                namespace text,
+                feature text NOT NULL,
+                provider text NOT NULL,
+                model text,
+                input_tokens integer,
+                output_tokens integer,
+                audio_seconds real,
+                characters integer,
+                cost_usd numeric(12,6) NOT NULL DEFAULT 0,
+                meta jsonb,
+                created_at timestamptz DEFAULT now()
+            );
+            CREATE INDEX IF NOT EXISTS usage_log_project_idx ON usage_log (project, created_at DESC);
+
+            -- Virtual forms — structured "slot-filling" tools ALLEN uses for common
+            -- requests (schedule an appointment, open a PIAAR initiative, etc). Each row
+            -- becomes one dynamically-generated tool (submit_form_<key>) with its own
+            -- required fields, so Claude's own tool-calling enforces "ask if missing"
+            -- rather than guessing. created_by 'system' = seeded starter forms;
+            -- 'allen' = ALLEN defined it himself via define_virtual_form.
+            CREATE TABLE IF NOT EXISTS virtual_forms (
+                id text PRIMARY KEY,
+                namespace text NOT NULL,
+                key text NOT NULL,
+                label text NOT NULL,
+                domain text NOT NULL DEFAULT 'personal',
+                action text NOT NULL DEFAULT 'note',
+                fields jsonb NOT NULL,
+                created_by text NOT NULL DEFAULT 'system',
+                created_at timestamptz DEFAULT now()
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS virtual_forms_ns_key_idx ON virtual_forms (namespace, key);
             """
         )
 
@@ -469,3 +511,125 @@ def add_inspiration(namespace: str, text: str) -> str:
     with _cursor() as cur:
         cur.execute("INSERT INTO inspirations (id, namespace, text, rating) VALUES (%s, %s, %s, 2)", (iid, namespace, text))
     return iid
+
+
+# ---- usage & cost tracking ("$" console dashboard) ----
+def insert_usage(
+    project: str,
+    namespace: str,
+    feature: str,
+    provider: str,
+    model: Optional[str],
+    input_tokens: Optional[int] = None,
+    output_tokens: Optional[int] = None,
+    audio_seconds: Optional[float] = None,
+    characters: Optional[int] = None,
+    cost_usd: float = 0.0,
+    meta: Optional[dict] = None,
+) -> None:
+    """Record one billable API call. Never raises — usage tracking must not break the work."""
+    if not db_ready():
+        return
+    try:
+        uid = f"use-{int(time.time() * 1000)}-{secrets.randbelow(100000)}"
+        with _cursor() as cur:
+            cur.execute(
+                "INSERT INTO usage_log (id, project, namespace, feature, provider, model, "
+                "input_tokens, output_tokens, audio_seconds, characters, cost_usd, meta) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (
+                    uid, project, namespace or None, feature, provider, model,
+                    input_tokens, output_tokens, audio_seconds, characters,
+                    cost_usd, json.dumps(meta) if meta else None,
+                ),
+            )
+    except Exception:
+        pass
+
+
+def usage_summary(project: Optional[str] = None, days: int = 30) -> list[dict]:
+    """Totals grouped by project/feature/provider/model over the trailing window."""
+    if not db_ready():
+        return []
+    where = "WHERE created_at > now() - (%s || ' days')::interval"
+    args: list = [days]
+    if project:
+        where += " AND project = %s"
+        args.append(project)
+    with _cursor() as cur:
+        cur.execute(
+            f"SELECT project, feature, provider, model, count(*) AS calls, "
+            f"sum(coalesce(input_tokens,0)) AS input_tokens, "
+            f"sum(coalesce(output_tokens,0)) AS output_tokens, "
+            f"sum(coalesce(audio_seconds,0)) AS audio_seconds, "
+            f"sum(coalesce(characters,0)) AS characters, "
+            f"sum(cost_usd) AS cost_usd "
+            f"FROM usage_log {where} "
+            f"GROUP BY project, feature, provider, model "
+            f"ORDER BY project, cost_usd DESC",
+            args,
+        )
+        return list(cur.fetchall())
+
+
+def usage_daily(project: Optional[str] = None, days: int = 30) -> list[dict]:
+    """Daily cost totals over the trailing window — feeds the trend chart + top-usage-days."""
+    if not db_ready():
+        return []
+    where = "WHERE created_at > now() - (%s || ' days')::interval"
+    args: list = [days]
+    if project:
+        where += " AND project = %s"
+        args.append(project)
+    with _cursor() as cur:
+        cur.execute(
+            f"SELECT (created_at AT TIME ZONE 'UTC')::date AS day, "
+            f"sum(cost_usd) AS cost_usd, count(*) AS calls "
+            f"FROM usage_log {where} "
+            f"GROUP BY (created_at AT TIME ZONE 'UTC')::date ORDER BY day",
+            args,
+        )
+        return list(cur.fetchall())
+
+
+# ---- virtual forms (ALLEN's structured "slot-filling" tools) ----
+def list_forms(namespace: str) -> list[dict]:
+    if not db_ready():
+        return []
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT key, label, domain, action, fields, created_by, created_at FROM virtual_forms "
+            "WHERE namespace = %s ORDER BY created_at",
+            (namespace,),
+        )
+        return list(cur.fetchall())
+
+
+def get_form(namespace: str, key: str) -> Optional[dict]:
+    if not db_ready():
+        return None
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT key, label, domain, action, fields, created_by FROM virtual_forms "
+            "WHERE namespace = %s AND key = %s",
+            (namespace, key),
+        )
+        return cur.fetchone()
+
+
+def upsert_form(
+    namespace: str, key: str, label: str, domain: str, action: str,
+    fields: list, created_by: str = "system",
+) -> dict:
+    fid = f"form-{namespace}-{key}"
+    with _cursor() as cur:
+        cur.execute(
+            "INSERT INTO virtual_forms (id, namespace, key, label, domain, action, fields, created_by) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
+            "ON CONFLICT (namespace, key) DO UPDATE SET "
+            "label = EXCLUDED.label, domain = EXCLUDED.domain, action = EXCLUDED.action, "
+            "fields = EXCLUDED.fields "
+            "RETURNING key, label, domain, action, fields, created_by",
+            (fid, namespace, key, label, domain, action, json.dumps(fields), created_by),
+        )
+        return cur.fetchone()

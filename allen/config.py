@@ -95,6 +95,16 @@ class Settings(BaseSettings):
 
     port: int = 8090
 
+    # Feed watch — ALLIE monitors social/momentum sources for "hot instrument"
+    # signals and pushes them to Thoth (axis-tekhen). Off by default; needs a
+    # ticker watchlist + Thoth endpoint/token to do anything.
+    feed_watch_enabled: bool = False
+    feed_watch_tickers: str = ""             # comma-separated, e.g. "AAPL,TSLA,NVDA"
+    feed_watch_interval_minutes: int = 30
+    thoth_ingest_url: str = ""               # e.g. https://axis-tekhen.rmasters.group/api/stocks/thoth/signals
+    thoth_ingest_token: str = ""             # shared secret, must match axis-tekhen's THOTH_INGEST_TOKEN
+    youtube_data_api_key: str = ""           # YouTube Data API v3 key — separate from yt-dlp ingest, needed for search
+
     @property
     def whatsapp_ready(self) -> bool:
         return bool(
@@ -150,6 +160,19 @@ class Settings(BaseSettings):
     @property
     def youtube_ready(self) -> bool:
         return self.docs_ready and bool(self.gdrive_youtube_folder_id)
+
+    @property
+    def feed_watch_ready(self) -> bool:
+        return bool(
+            self.feed_watch_enabled
+            and self.feed_watch_tickers.strip()
+            and self.thoth_ingest_url
+            and self.thoth_ingest_token
+        )
+
+    @property
+    def youtube_search_ready(self) -> bool:
+        return bool(self.youtube_data_api_key)
 
 
 settings = Settings()

@@ -19,7 +19,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, Response, Upl
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.responses import Response as RawResponse
 
-from . import agent, classify, db, google_auth, media, memory, speech, tools_calendar
+from . import agent, classify, db, google_auth, media, memory, speech, tech_accounts, tools_calendar, usage
 from .config import settings
 
 router = APIRouter()
@@ -372,20 +372,65 @@ def add_inspiration_ep(body: dict, request: Request) -> dict:
 
 @router.post("/console/speak")
 def console_speak(body: dict, request: Request) -> RawResponse:
-    _session_user(request)
+    user = _session_user(request)
     if not settings.tts_ready:
         raise HTTPException(503, "TTS not configured")
-    audio = speech.synthesize((body or {}).get("text", ""))
+    audio = speech.synthesize((body or {}).get("text", ""), namespace=user["namespace"], feature="tts")
     return RawResponse(content=audio, media_type="audio/mpeg")
 
 
 @router.post("/console/listen")
 async def console_listen(request: Request, file: UploadFile = File(...)) -> dict:
-    _session_user(request)
+    user = _session_user(request)
     if not settings.stt_ready:
         raise HTTPException(503, "STT not configured")
     audio = await file.read()
-    return {"text": speech.transcribe(audio, file.filename or "audio.webm")}
+    if not audio:
+        raise HTTPException(400, "empty recording")
+    try:
+        text = speech.transcribe(audio, file.filename or "audio.webm", namespace=user["namespace"], feature="dictate")
+    except Exception as exc:
+        raise HTTPException(500, f"transcription failed: {exc}") from exc
+    return {"text": text}
+
+
+@router.get("/console/mic-health")
+def console_mic_health(request: Request) -> dict:
+    """Whether ALLEN's mic (Whisper STT) is currently healthy — lets the console disable
+    the mic button and show a warning instead of recording into a call that's just going
+    to fail (e.g. OpenAI quota exhausted). Not STT-configured at all counts as unhealthy
+    too, same as a live error would."""
+    _session_user(request)
+    if not settings.stt_ready:
+        return {"ok": False, "error": {"at": None, "message": "STT not configured"}}
+    err = tech_accounts.get_error("rmg-ai", "openai")
+    return {"ok": err is None, "error": err}
+
+
+@router.get("/console/usage")
+def console_usage(request: Request, days: int = 30) -> dict:
+    """Data source for the "$" dashboard panel — session-gated same as the rest of the
+    console (no separate admin key needed; the console is already single-user-gated)."""
+    _session_user(request)
+    return usage.dashboard(days=days)
+
+
+@router.post("/console/usage/accounts/{account_key}/cycle")
+def console_usage_set_cycle(request: Request, account_key: str, body: dict) -> dict:
+    """Set a flat-rate technology account's billing-cycle renewal day (1-28), so its
+    countdown in the dashboard reflects when it actually renews instead of being unset."""
+    user = _session_user(request)
+    day = (body or {}).get("day")
+    try:
+        day = int(day)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "day must be an integer 1-28")
+    try:
+        tech_accounts.set_cycle_day(account_key, day)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    db.add_audit(user["namespace"], "rahm", "set_tech_account_cycle", f"{account_key}: day {day}", "ok")
+    return {"ok": True}
 
 
 @router.post("/console/attach")
