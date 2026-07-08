@@ -65,6 +65,7 @@ class DirectRequest(BaseModel):
     intensity: Optional[str] = None
     stability_mode: Optional[str] = None  # creative | natural | robust (override)
     brand_examples: Optional[list[str]] = Field(None, description="Previously tagged scripts for this brand — used as style reference for the emotion director")
+    version: str = Field("v3", description="ElevenLabs target: 'v3' (bracket tags + caps) or 'v2' (caps + punctuation only, no bracket tags)")
 
 
 class DirectResponse(BaseModel):
@@ -72,6 +73,7 @@ class DirectResponse(BaseModel):
     stability_mode: str
     stability: float
     audio_tag_palette: str
+    version: str = "v3"
 
 
 class MeetingRequest(BaseModel):
