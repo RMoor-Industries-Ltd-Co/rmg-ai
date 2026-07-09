@@ -58,15 +58,26 @@ ALLEN_TOOLS = [
     },
 ]
 
-_DELEGATION_NOTE = (
+_ALWAYS_ON_NOTE = (
     "\n\nYOUR REACH — Rahm speaks ONLY to you; he never sees the machinery. You have:\n"
     "• ALLIE, your agentic Director of Operations (delegate_to_allie). She OWNS operational execution. For "
     "ANYTHING in the BUSINESS worlds (RMG or RMI) that needs live data or legwork — ClickUp projects/tasks, "
     "Notion knowledge, research, organizing facts, records work — DELEGATE to ALLIE. Give her only the "
     "business context she needs, never Rahm's personal details.\n"
+)
+
+_CLICKUP_ONLY_NOTE = (
     "• Full CRUD over Rahm's PERSONAL SYSTEMS ClickUp (appointments, health, home, errands) — create, "
     "update, delete his personal tasks directly. Read first for correct ids; make exactly the change asked. "
-    "This personal layer is yours, not ALLIE's. You can also read Notion directly when needed.\n"
+    "This personal layer is yours, not ALLIE's.\n"
+    "Rule: business operational legwork → delegate to ALLIE; personal tasks → you. Answer Rahm in your own "
+    "natural spoken voice. NEVER mention tools, ALLIE, or ClickUp — to Rahm it is simply you, getting it done.\n"
+)
+
+_CLICKUP_AND_CALENDAR_NOTE = (
+    "• Full CRUD over Rahm's PERSONAL SYSTEMS ClickUp (appointments, health, home, errands) — create, "
+    "update, delete his personal tasks directly. Read first for correct ids; make exactly the change asked. "
+    "This personal layer is yours, not ALLIE's.\n"
     "\n"
     "CALENDAR WORKFLOW — Rahm's calendar is rahmind.consulting@rmoorind.com, and ClickUp is already synced "
     "to it: ANY ClickUp task with a TIMED due date automatically appears on that calendar. So when Rahm "
@@ -82,16 +93,32 @@ _DELEGATION_NOTE = (
     "Rule: business operational legwork → delegate to ALLIE; personal tasks + all calendar scheduling → you. "
     "Answer Rahm in your own natural spoken voice. NEVER mention tools, ALLIE, ClickUp/Notion, the calendar "
     "API, or that you delegated — to Rahm it is simply you, getting it done.\n"
+)
+
+_NOTION_NOTE = "You can also read Notion directly when needed.\n"
+
+_CALENDAR_ONLY_NOTE = (
+    "CALENDAR — Rahm's calendar is rahmind.consulting@rmoorind.com. Use the calendar tools to schedule "
+    "one-off events directly. Answer Rahm in your own natural spoken voice.\n"
+)
+
+_YOUTUBE_NOTE = (
     "\n"
     "YOUTUBE — when Rahm pastes or mentions a YouTube URL (youtube.com/watch, youtu.be, or similar), "
     "IMMEDIATELY call youtube_ingest on it without asking. Do not wait for him to say 'save this' or "
     "'ingest this' — a YouTube link in chat is always an intent to capture it. After ingesting, tell him "
     "concisely what was saved (title + Drive links). If you want ALLIE to research or summarize the "
-    "transcript, delegate to her after ingesting."
+    "transcript, delegate to her after ingesting.\n"
+)
+
+_DRIVE_NOTE = (
     "\n"
     "DRIVE — use drive_search, drive_list_folder, drive_read_file to look things up in Rahm's Google Drive. "
     "Use drive_create_folder, drive_create_file, drive_update_file, drive_move_file, drive_delete_file to "
     "organize, save, or manage files directly. Write ops are audit-logged.\n"
+)
+
+_GITHUB_NOTE = (
     "\n"
     "GITHUB — you are allen-piaar-control-bot, with your own identity across every repo in the "
     "RMoor-Industries-Ltd-Co org. Use github_list_issues/github_get_issue/github_list_pull_requests/"
@@ -101,6 +128,9 @@ _DELEGATION_NOTE = (
     "you open or comment on an issue in the relevant repo, Claude Code reads it there. You can update file "
     "contents ONLY in rmg-piaar-system (github_update_file) — never on a code repo; you read code everywhere "
     "but only Claude Code writes it. Write ops are audit-logged.\n"
+)
+
+_FORMS_NOTE = (
     "\n"
     "VIRTUAL FORMS — for structured personal/project/business requests (schedule an appointment, open a "
     "PIAAR initiative, log a business task, save a reminder, ...), use your submit_form_* tools instead of "
@@ -111,6 +141,34 @@ _DELEGATION_NOTE = (
     "define_virtual_form — but CONFIRM with Rahm first; only create it once he agrees it's worth having, "
     "never as a silent background action."
 )
+
+
+def _build_delegation_note(
+    *, clickup_ready: bool, notion_ready: bool, calendar_ready: bool,
+    youtube_ready: bool, gdrive_ready: bool, github_ready: bool,
+) -> str:
+    """Every section here describes a real, currently-attached tool — nothing is claimed
+    that isn't actually in this turn's tool list. A prior version described every
+    capability unconditionally regardless of whether the underlying integration was
+    ready, so a misconfigured/unready integration read to ALLEN as "I have this tool"
+    right up until he tried to call it and found it wasn't there."""
+    note = _ALWAYS_ON_NOTE
+    if clickup_ready and calendar_ready:
+        note += _CLICKUP_AND_CALENDAR_NOTE
+    elif clickup_ready:
+        note += _CLICKUP_ONLY_NOTE
+    elif calendar_ready:
+        note += _CALENDAR_ONLY_NOTE
+    if notion_ready:
+        note += _NOTION_NOTE
+    if youtube_ready:
+        note += _YOUTUBE_NOTE
+    if gdrive_ready:
+        note += _DRIVE_NOTE
+    if github_ready:
+        note += _GITHUB_NOTE
+    note += _FORMS_NOTE
+    return note
 
 
 def respond_agentic(
@@ -124,17 +182,21 @@ def respond_agentic(
     from . import tools_calendar, tools_clickup, tools_gdrive, tools_github, tools_notion, tools_web, tools_youtube
     from .config import settings
 
+    calendar_ready = tools_calendar.ready()
+    youtube_ready = tools_youtube.ready()
+    gdrive_ready = tools_gdrive.ready()
+
     tools = list(ALLEN_TOOLS)
     if settings.clickup_ready:
         tools += tools_clickup.TOOLS + tools_clickup.WRITE_TOOLS  # full CRUD on Rahm's PERSONAL spaces
     if settings.notion_ready:
         tools += tools_notion.TOOLS
-    if tools_calendar.ready():
+    if calendar_ready:
         tools += tools_calendar.TOOLS  # ALLEN manages Rahm's personal calendar
     tools += tools_web.TOOLS  # web fetch always available
-    if tools_youtube.ready():
+    if youtube_ready:
         tools += tools_youtube.TOOLS  # YouTube ingest → Drive
-    if tools_gdrive.ready():
+    if gdrive_ready:
         tools += tools_gdrive.TOOLS  # Drive read + CRUD (TOOLS already includes WRITE_TOOLS)
     if settings.github_ready:
         tools += tools_github.TOOLS + tools_github.WRITE_TOOLS  # allen-piaar-control-bot — PIAAR org visibility
@@ -142,7 +204,12 @@ def respond_agentic(
     forms.ensure_seed_forms(namespace)
     tools += forms.build_tool_schemas(namespace) + forms.META_TOOLS
 
-    system = chat.build_system(None, None, context) + _DELEGATION_NOTE
+    delegation_note = _build_delegation_note(
+        clickup_ready=settings.clickup_ready, notion_ready=settings.notion_ready,
+        calendar_ready=calendar_ready, youtube_ready=youtube_ready,
+        gdrive_ready=gdrive_ready, github_ready=settings.github_ready,
+    )
+    system = chat.build_system(None, None, context) + delegation_note
     messages = [{"role": "user", "content": chat.build_user(message, history)}]
 
     def runner(name: str, inp: dict) -> str:
