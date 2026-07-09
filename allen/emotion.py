@@ -7,8 +7,10 @@ Two rulesets, chosen by `version`:
   annotation relies on ALL CAPS + punctuation (ellipses/em dashes) only; emotional delivery
   is carried by the stability/style sliders, not inline tags."""
 
+import re
 from typing import Optional
 
+from .brand_contracts import get_contract
 from .brands import _PRESETS
 from .llm import get_llm
 
@@ -67,15 +69,31 @@ BRAND_LABELS = {
 
 
 def profiles() -> dict:
-    """Serializable emotion profiles + tag rules for the Voice Direction UI."""
+    """Serializable emotion profiles + tag rules for the Voice Direction UI. `emphasis` is
+    the field name the dashboard's EmotionProfile type actually reads — profiles() used to
+    ship a `delivery` key instead, so the "Tag rules" panel silently rendered undefined."""
     out = []
     for key, prof in EMOTION_PROFILES.items():
+        contract = get_contract(key)
+        if contract:
+            out.append(
+                {
+                    "brand": key,
+                    "label": contract["display_name"],
+                    "tags": ", ".join(contract["allowed_tags"]),
+                    "emphasis": contract["voice_identity"],
+                    "pacing": "; ".join(contract["pacing_rules"]),
+                    "stability_mode": contract["recommended_stability"],
+                    "stability": STABILITY_VALUE.get(contract["recommended_stability"], 0.5),
+                }
+            )
+            continue
         out.append(
             {
                 "brand": key,
                 "label": BRAND_LABELS.get(key, key),
                 "tags": prof["tags"],
-                "delivery": prof["delivery"],
+                "emphasis": prof["delivery"],
                 "pacing": prof["pacing"],
                 "stability_mode": prof["stability"],
                 "stability": STABILITY_VALUE.get(prof["stability"], 0.5),
@@ -130,6 +148,78 @@ def _v2_system(prof: dict, brand_tone: str, intensity: Optional[str]) -> str:
     )
 
 
+def _intensity_key(intensity: Optional[str]) -> str:
+    key = (intensity or "default").lower()
+    return key if key in ("default", "soft", "strong") else "default"
+
+
+def _v3_contract_system(contract: dict, intensity_key: str) -> str:
+    mode = contract["intensity_modes"][intensity_key]
+    forbidden = "\n".join(f"- {f}" for f in contract["forbidden"])
+    pacing = "\n".join(f"- {p}" for p in contract["pacing_rules"])
+    use_tags = ", ".join(mode["use"])
+    reduce_tags = ", ".join(mode.get("reduce", [])) or "(none specified)"
+    example = contract.get("example")
+    example_block = (
+        f"\n\nEXAMPLE (Strong mode, for tagging density/style reference only — do not copy its words):\n"
+        f"{example['text']}\n" if example else ""
+    )
+    return (
+        f"You are the Emotion Director for {contract['display_name']}, voiced by {contract['host']}, "
+        "annotating an approved script with ElevenLabs v3 bracket audio tags for the "
+        "\"Re-apply direction\" step.\n\n"
+        "Follow this brand's performance contract exactly:\n\n"
+        f"VOICE IDENTITY: {contract['voice_identity']}\n\n"
+        f"BRAND THEME: {contract['brand_theme']}\n\n"
+        f"ALLOWED TAGS ONLY (do not invent or use tags outside this list): {', '.join(contract['allowed_tags'])}\n\n"
+        f"FORBIDDEN — never do any of this:\n{forbidden}\n\n"
+        f"PACING RULES:\n{pacing}\n\n"
+        f"INTENSITY: {mode['label']} — {mode['purpose']} Tag density: {mode['tag_density']}. "
+        f"Favor these tags: {use_tags}. Reduce or avoid: {reduce_tags}. {mode['notes']}\n"
+        + example_block
+        + "\nRE-APPLY DIRECTION BEHAVIOR:\n"
+        "1. Annotate the script with ElevenLabs v3 bracket tags from the allowed list above.\n"
+        "2. Preserve the original wording exactly — do not rewrite, add, or remove words.\n"
+        "3. Preserve paragraph order.\n"
+        "4. Add tags only where they improve performance — not on every line.\n"
+        "5. Use ellipses (…) where pacing needs a natural vocal break.\n"
+        "6. Do not stack more than 2 tags at the start of a sentence unless necessary.\n"
+        "Return ONLY the annotated script text — no commentary, no labels, no explanation."
+    )
+
+
+def _v2_contract_system(contract: dict, intensity_key: str) -> str:
+    mode = contract["intensity_modes"][intensity_key]
+    # v2 must never see literal bracket syntax in its own instructions — the model has no
+    # concept of a "tag" to avoid, only literal text it would otherwise speak aloud. Drop
+    # bullets that are purely about tag mechanics, and strip stray [bracket] mentions
+    # (e.g. "don't overuse [excited]") from the rest so none leak into the prompt.
+    debracket = lambda s: re.sub(r"\[([^\]]+)\]", r"\1", s)
+    forbidden = "\n".join(
+        f"- {debracket(f)}"
+        for f in contract["forbidden"]
+        if "tag" not in f.lower() and "bracket" not in f.lower()
+    )
+    caps_density = {"soft": "light — only at genuine emotional peaks", "default": "moderate", "strong": "moderate to high, but still controlled, not shouted"}[intensity_key]
+    return (
+        f"You are the Emotion Director for {contract['display_name']}, voiced by {contract['host']}, "
+        "annotating an approved script for ElevenLabs v2 synthesis (no bracket tags — v2 speaks "
+        "them aloud literally, so NONE may appear anywhere in the output).\n\n"
+        f"VOICE IDENTITY: {contract['voice_identity']}\n\n"
+        f"BRAND THEME: {contract['brand_theme']}\n\n"
+        f"FORBIDDEN:\n{forbidden}\n\n"
+        f"EMPHASIS: ALL CAPS on the single most important word/phrase per beat — the primary "
+        f"emphasis mechanism for v2. Density for {mode['label']} intensity: {caps_density}.\n"
+        "PACING: punctuation only — ellipses (…) for soft hesitation, em dashes (—) for hard "
+        f"breaks, paragraph breaks for breathing room. {mode['notes']}\n\n"
+        "RE-APPLY DIRECTION BEHAVIOR:\n"
+        "1. Preserve the original wording exactly — do not rewrite, add, or remove words.\n"
+        "2. Preserve paragraph order.\n"
+        "3. Add ALL CAPS emphasis and punctuation-based pacing only where they improve performance.\n"
+        "Return ONLY the annotated script text — no commentary, no labels, no explanation."
+    )
+
+
 def direct(
     script: str,
     brand: str,
@@ -139,14 +229,27 @@ def direct(
     brand_examples: Optional[list[str]] = None,
     version: str = "v3",
 ) -> dict:
-    prof = EMOTION_PROFILES.get((brand or "").lower(), EMOTION_PROFILES["com"])
-    b = _PRESETS["brands"].get((brand or "").lower(), {})
-    brand_tone = b.get("tone_rules", "")
     version = (version or "v3").lower()
     if version not in ("v2", "v3"):
         version = "v3"
 
-    system = _v2_system(prof, brand_tone, intensity) if version == "v2" else _v3_system(prof, brand_tone, intensity)
+    contract = get_contract(brand)
+    if contract:
+        intensity_key = _intensity_key(intensity)
+        system = (
+            _v2_contract_system(contract, intensity_key)
+            if version == "v2"
+            else _v3_contract_system(contract, intensity_key)
+        )
+        default_stability = contract["recommended_stability"]
+        tag_palette = ", ".join(contract["allowed_tags"])
+    else:
+        prof = EMOTION_PROFILES.get((brand or "").lower(), EMOTION_PROFILES["com"])
+        b = _PRESETS["brands"].get((brand or "").lower(), {})
+        brand_tone = b.get("tone_rules", "")
+        system = _v2_system(prof, brand_tone, intensity) if version == "v2" else _v3_system(prof, brand_tone, intensity)
+        default_stability = prof["stability"]
+        tag_palette = prof["tags"]
 
     user = f"Script:\n{script}"
 
@@ -157,13 +260,13 @@ def direct(
         user += "\n---"
 
     tagged = get_llm().complete(system=system, user=user, max_tokens=1500)
-    mode = (stability_mode or prof["stability"]).lower()
+    mode = (stability_mode or default_stability).lower()
     if mode not in STABILITY_VALUE:
-        mode = prof["stability"]
+        mode = default_stability
     return {
         "tagged_script": tagged,
         "stability_mode": mode,
         "stability": STABILITY_VALUE.get(mode, 0.5),
-        "audio_tag_palette": prof["tags"],
+        "audio_tag_palette": tag_palette,
         "version": version,
     }

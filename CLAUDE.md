@@ -113,4 +113,5 @@ Never paste real secret values into chat or any committed file.
 | `allen/scheduler.py` | Background scheduler — daily WhatsApp report + feed-watch interval job |
 | `allen/usage.py` | Usage & cost tracking — PIAAR project registry, rate tables, the "$" console dashboard's data source |
 | `allen/tech_accounts.py` | Technology-account registry for the "$" dashboard — metered accounts cross-reference usage_log, flat-rate subscriptions show a billing-cycle countdown from a renewal day set via the console |
+| `allen/brand_contracts.py` | Written brand voice performance contracts (allowed ElevenLabs v3 tags, forbidden behaviors, pacing rules, per-intensity tag density) — canonical spec in rmg-piaar-system's contracts/22; `emotion.py`'s `direct()` uses a brand's contract when one exists, else falls back to the older per-brand profile |
 | `allen/config.py` | Pydantic settings (all env vars) |
