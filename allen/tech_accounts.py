@@ -105,6 +105,27 @@ def get_error(project: str, usage_provider: str) -> "dict | None":
     return {"at": at, "message": message}
 
 
+# How long a recorded failure blocks a gated feature (e.g. the mic button) before it's
+# allowed to try again on its own. Without this, a fixed account (billing topped up,
+# key rotated) stays permanently "unhealthy" — record_error() only ever gets called
+# again by a NEW attempt, and a gate that refuses to attempt while unhealthy can never
+# produce one. The cooldown breaks that deadlock; a real success still clears it
+# immediately via clear_error(), this just stops it being stuck forever on a stale flag.
+GATE_COOLDOWN_SECONDS = 120
+
+
+def get_blocking_error(project: str, usage_provider: str) -> "dict | None":
+    """Like get_error(), but a failure older than GATE_COOLDOWN_SECONDS no longer counts
+    as blocking — used by anything that gates a retry attempt (not the dashboard, which
+    should keep showing the real last-known error regardless of age)."""
+    import time
+
+    err = get_error(project, usage_provider)
+    if err and time.time() - err["at"] > GATE_COOLDOWN_SECONDS:
+        return None
+    return err
+
+
 def _cycle_status(anchor_day: int) -> dict:
     """Days left / percent elapsed in the current renewal cycle, anchored to a
     day-of-month rather than always the calendar month's 1st."""

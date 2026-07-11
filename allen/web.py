@@ -399,11 +399,16 @@ def console_mic_health(request: Request) -> dict:
     """Whether ALLEN's mic (Whisper STT) is currently healthy — lets the console disable
     the mic button and show a warning instead of recording into a call that's just going
     to fail (e.g. OpenAI quota exhausted). Not STT-configured at all counts as unhealthy
-    too, same as a live error would."""
+    too, same as a live error would.
+
+    Uses get_blocking_error() (not get_error()) so a fixed account doesn't stay stuck
+    "unhealthy" forever — nothing re-clears the flag until a real attempt succeeds, and
+    the mic button refuses to attempt while unhealthy, so without a cooldown a resolved
+    issue could never self-heal."""
     _session_user(request)
     if not settings.stt_ready:
         return {"ok": False, "error": {"at": None, "message": "STT not configured"}}
-    err = tech_accounts.get_error("rmg-ai", "openai")
+    err = tech_accounts.get_blocking_error("rmg-ai", "openai")
     return {"ok": err is None, "error": err}
 
 
