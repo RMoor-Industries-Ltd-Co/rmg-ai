@@ -472,7 +472,12 @@ function micExt(mimeType){
 }
 async function toggleMic(){
   if(recorder){ recorder.stop(); return; }
-  if(!micHealthy){ $('#err').textContent='Mic is unavailable — '+(micHealthMsg||'STT has a problem right now')+'.'; return; }
+  if(!micHealthy){
+    // Re-check immediately rather than making Rahm wait for the next poll — the
+    // backend's cooldown may have already lifted (e.g. right after fixing billing).
+    await checkMicHealth();
+    if(!micHealthy){ $('#err').textContent='Mic is unavailable — '+(micHealthMsg||'STT has a problem right now')+'.'; return; }
+  }
   try {
     const stream=await navigator.mediaDevices.getUserMedia({audio:true});
     const preferred=pickMicMime();
