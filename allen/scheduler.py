@@ -12,12 +12,15 @@ _scheduler: BackgroundScheduler | None = None
 
 
 def _send_report() -> None:
-    from . import report, whatsapp
+    from . import briefing, report, whatsapp
 
-    logger.info("[scheduler] firing daily report")
+    logger.info("[scheduler] firing daily briefing + report")
     try:
-        body = report.build_daily_report()
-        whatsapp.send_message(body)
+        whatsapp.send_message(briefing.build_daily_briefing())
+    except Exception as exc:
+        logger.error("[scheduler] daily briefing failed: %s", exc)
+    try:
+        whatsapp.send_message(report.build_daily_report())
     except Exception as exc:
         logger.error("[scheduler] daily report failed: %s", exc)
 
