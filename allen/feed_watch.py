@@ -1,6 +1,8 @@
-"""Feed-watch job — ALLIE's periodic scan for "hot instrument" signals, pushed to
+"""Feed-watch job — periodic scan for "hot instrument" signals, pushed to
 Thoth (axis-tekhen). Wired into the background scheduler (see scheduler.py);
-mirrors the existing daily-report job's shape."""
+mirrors the existing daily-report job's shape. Despite the "ALLIE" naming
+carried over in config.py, this is a standalone, non-agentic scanner — it
+does not call allie.py or involve any LLM reasoning."""
 
 import logging
 

@@ -7,8 +7,12 @@ Guidance for Claude (and humans) working in this repo. Read this first.
 ## Project
 
 **rmg-ai** — the ALLEN & ALLIE AI services powering the **ALLEN I VERSE** platform.
-A FastAPI (Python) app serving the ALLEN console UI, agentic chat, voice, and ALLIE (the
-AMG intelligence layer). Deployed as a Docker container on a dedicated ALLEN server.
+A FastAPI (Python) app serving the ALLEN console UI, agentic chat, voice, and ALLIE.
+ALLIE is not a standalone process or a separate chat surface — she's an in-process
+sub-agent ALLEN delegates to (`allen/allie.py`, invoked from `allen/agent.py`),
+scoped to Rahm's BUSINESS worlds (RMG + RMI) and explicitly walled off from AMG,
+which is Cappo's domain one tier further down the chain (Rahm → ALLEN → ALLIE →
+Cappo). Deployed as a Docker container on a dedicated ALLEN server.
 
 ## Commands
 
@@ -102,7 +106,7 @@ Never paste real secret values into chat or any committed file.
 | `allen/main.py` | FastAPI app, mounts static files and router |
 | `allen/web.py` | ALLEN I VERSE console routes (served at `/`) |
 | `allen/agent.py` | ALLEN agentic loop + tool dispatch |
-| `allen/allie.py` | ALLIE agent (AMG-scoped intelligence) |
+| `allen/allie.py` | ALLIE — ALLEN's in-process business-ops sub-agent (RMG + RMI only; NOT AMG, that's Cappo's domain) |
 | `allen/static/console.html` | Full console UI (single file, no build step) |
 | `allen/tools_gdrive.py` | Google Drive read + write tools |
 | `allen/tools_calendar.py` | Google Calendar tools |
@@ -110,7 +114,7 @@ Never paste real secret values into chat or any committed file.
 | `allen/tools_notion.py` | Notion tools |
 | `allen/tools_github.py` | GitHub tools — ALLEN's allen-piaar-control-bot App identity across the RMoor-Industries-Ltd-Co org |
 | `allen/forms.py` | Virtual forms — dynamically-generated submit_form_* tools (schedule appointment, PIAAR initiative, business task, ...) so Claude's native required-param enforcement makes ALLEN ask instead of guess; ALLEN can define new ones himself |
-| `allen/tools_market_feed.py` | ALLIE's feed-watch scans (yfinance, YouTube) for "hot instrument" signals |
+| `allen/tools_market_feed.py` | Market-feed scanner (yfinance, YouTube) for "hot instrument" signals — standalone, non-agentic, unrelated to `allie.py` despite historical naming |
 | `allen/feed_watch.py` | Feed-watch job — scans configured tickers, pushes signals to Thoth (axis-tekhen) |
 | `allen/scheduler.py` | Background scheduler — daily WhatsApp report + feed-watch interval job |
 | `allen/usage.py` | Usage & cost tracking — PIAAR project registry, rate tables, the "$" console dashboard's data source |

@@ -95,9 +95,10 @@ class Settings(BaseSettings):
 
     port: int = 8090
 
-    # Feed watch — ALLIE monitors social/momentum sources for "hot instrument"
-    # signals and pushes them to Thoth (axis-tekhen). Off by default; needs a
-    # ticker watchlist + Thoth endpoint/token to do anything.
+    # Feed watch — a standalone, non-agentic scanner (unrelated to allie.py) that
+    # monitors social/momentum sources for "hot instrument" signals and pushes
+    # them to Thoth (axis-tekhen). Off by default; needs a ticker watchlist +
+    # Thoth endpoint/token to do anything.
     feed_watch_enabled: bool = False
     feed_watch_tickers: str = ""             # comma-separated, e.g. "AAPL,TSLA,NVDA"
     feed_watch_interval_minutes: int = 30
