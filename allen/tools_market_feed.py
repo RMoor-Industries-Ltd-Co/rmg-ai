@@ -1,5 +1,8 @@
-"""ALLIE's feed-watch pipeline — scans social/momentum sources for "hot instrument"
-signals and pushes them to Thoth (axis-tekhen's ingest endpoint).
+"""Market-feed scanner — scans social/momentum sources for "hot instrument" signals
+and pushes them to Thoth (axis-tekhen's ingest endpoint). Runs as a standalone
+scheduler job (see feed_watch.py); NOT part of ALLIE's agentic delegation chain
+(allie.py) despite the historical "ALLIE" naming in config/docs — this is an
+unrelated, unattended finance-signal pipeline with no LLM reasoning in the loop.
 
 This is deliberately narrow: it detects a signal and hands it off. It does NOT
 score trades, size positions, or talk to any broker — that decision-making lives

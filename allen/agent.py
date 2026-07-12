@@ -58,12 +58,20 @@ ALLEN_TOOLS = [
     },
 ]
 
-_ALWAYS_ON_NOTE = (
-    "\n\nYOUR REACH — Rahm speaks ONLY to you; he never sees the machinery. You have:\n"
+_ALWAYS_ON_NOTE = "\n\nYOUR REACH — Rahm speaks ONLY to you; he never sees the machinery. You have:\n"
+
+_ALLIE_LIVE_NOTE = (
     "• ALLIE, your agentic Director of Operations (delegate_to_allie). She OWNS operational execution. For "
     "ANYTHING in the BUSINESS worlds (RMG or RMI) that needs live data or legwork — ClickUp projects/tasks, "
     "Notion knowledge, research, organizing facts, records work — DELEGATE to ALLIE. Give her only the "
     "business context she needs, never Rahm's personal details.\n"
+)
+
+_ALLIE_MEMORY_ONLY_NOTE = (
+    "• ALLIE, your Director of Operations (delegate_to_allie), exists but currently has no live ClickUp/"
+    "Notion access configured — she can only reason over what's already in business memory, not pull fresh "
+    "data. Delegate to her for research/organizing over known facts, but don't expect her to look anything "
+    "up live until that's configured.\n"
 )
 
 _CLICKUP_ONLY_NOTE = (
@@ -153,6 +161,7 @@ def _build_delegation_note(
     ready, so a misconfigured/unready integration read to ALLEN as "I have this tool"
     right up until he tried to call it and found it wasn't there."""
     note = _ALWAYS_ON_NOTE
+    note += _ALLIE_LIVE_NOTE if (clickup_ready or notion_ready) else _ALLIE_MEMORY_ONLY_NOTE
     if clickup_ready and calendar_ready:
         note += _CLICKUP_AND_CALENDAR_NOTE
     elif clickup_ready:
