@@ -23,9 +23,9 @@
   #login { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; padding:24px; text-align:center; }
   #login .big { font-size:30px; font-weight:800; letter-spacing:.16em; background:linear-gradient(135deg,var(--gold2),var(--gold)); -webkit-background-clip:text; background-clip:text; color:transparent; }
   #login p { color:var(--muted); max-width:30ch; }
-  /* home / dashboard */
-  #home { flex:1; display:flex; flex-direction:column; align-items:center; padding:24px; overflow-y:auto; gap:28px; }
-  .home-inner { display:flex; flex-direction:column; align-items:center; text-align:center; gap:16px; max-width:560px; margin:0 auto; }
+  /* home */
+  #home { flex:1; display:flex; align-items:center; justify-content:center; padding:24px; overflow-y:auto; }
+  .home-inner { display:flex; flex-direction:column; align-items:center; text-align:center; gap:16px; max-width:560px; }
   .home-logo { width:min(150px,40vw); border-radius:18px; }
   .home-greet { font-size:22px; font-weight:700; }
   .quote { font-size:21px; line-height:1.5; margin:4px 0; color:var(--gold2); font-style:italic; max-width:32ch; }
@@ -155,10 +155,13 @@
   .acct-cycle-set { display:flex; align-items:center; gap:4px; flex:none; }
   .acct-cycle-set input { width:38px; background:var(--bg); border:1px solid var(--line); border-radius:6px; color:var(--text); font-size:11px; padding:2px 4px; text-align:center; }
   .acct-cycle-set button { font-size:11px; padding:2px 6px; border-radius:6px; border:1px solid var(--line); background:var(--panel); color:var(--muted); cursor:pointer; }
-  /* PIAAR project dashboard (landing page) */
+  /* PIAAR project dashboard — its own top-level view, a direct link away from both
+     the quote-screen home and the chat, not a replacement for either. */
+  #dashboard { flex:1; display:flex; padding:24px; overflow-y:auto; }
   .dashboard-wrap { width:100%; max-width:960px; margin:0 auto; }
   .dashboard-head { text-align:center; margin-bottom:16px; }
   .dashboard-head h3 { margin:0 0 4px; font-size:15px; letter-spacing:.04em; color:var(--gold2); }
+  .dashboard-actions { text-align:center; margin-top:20px; }
   .project-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px; }
   .project-card { text-align:left; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 15px; cursor:pointer; display:flex; flex-direction:column; gap:8px; font-family:inherit; color:var(--text); }
   .project-card:hover { border-color:var(--gold); }
@@ -231,6 +234,7 @@
       <button type="button" class="ibtn" id="convBtn" title="Chats" style="display:none">💬</button>
       <button type="button" class="ibtn" id="memBtn" title="Memory" style="display:none">🧠</button>
       <button type="button" class="ibtn" id="usageBtn" title="Usage &amp; cost" style="display:none">$</button>
+      <button type="button" class="ibtn" id="dashBtn" title="PIAAR Dashboard" style="display:none">📊</button>
     </div>
     <div class="model-row" id="modelRow" style="display:none">
       <select id="modelPicker" title="Model for next message"></select>
@@ -255,13 +259,20 @@
       <button class="btn" id="enterChat">Speak with ALLEN →</button>
       <button class="icon-btn" id="anotherQuote">↻ Another</button>
     </div>
+    <button class="icon-btn" id="viewDashboard" title="PIAAR project dashboard">📊 PIAAR Dashboard →</button>
   </div>
+</div>
+
+<div id="dashboard" style="display:none">
   <div class="dashboard-wrap">
     <div class="dashboard-head">
       <h3>PIAAR Projects</h3>
       <p class="usage-note">Milestone progress across the ecosystem — tap a project for the full timeline.</p>
     </div>
     <div class="project-grid" id="projectGrid"></div>
+    <div class="dashboard-actions">
+      <button class="btn" id="dashboardChatBtn">Speak with ALLEN →</button>
+    </div>
   </div>
 </div>
 
@@ -322,11 +333,12 @@ async function api(path, opts={}) {
   }
   return r;
 }
-function showLogin(){ $('#login').style.display='flex'; $('#home').style.display='none'; $('#app').style.display='none'; ['newChatTop','convBtn','memBtn','usageBtn','outBtn'].forEach(id=>$('#'+id).style.display='none'); }
-function showApp(email){ $('#login').style.display='none'; ['newChatTop','convBtn','memBtn','usageBtn','outBtn'].forEach(id=>$('#'+id).style.display=''); if(email) $('#outBtn').title='Sign out ('+email+')'; initChats(); showHome();
+function showLogin(){ $('#login').style.display='flex'; $('#home').style.display='none'; $('#dashboard').style.display='none'; $('#app').style.display='none'; ['newChatTop','convBtn','memBtn','usageBtn','dashBtn','outBtn'].forEach(id=>$('#'+id).style.display='none'); }
+function showApp(email){ $('#login').style.display='none'; ['newChatTop','convBtn','memBtn','usageBtn','dashBtn','outBtn'].forEach(id=>$('#'+id).style.display=''); if(email) $('#outBtn').title='Sign out ('+email+')'; initChats(); showHome();
   checkMicHealth(); if(!window._micHealthTimer) window._micHealthTimer=setInterval(checkMicHealth, 120000); }
-function showHome(){ $('#login').style.display='none'; $('#app').style.display='none'; $('#home').style.display='flex'; loadInspiration(); loadDashboard(); }
-function enterChat(){ $('#login').style.display='none'; $('#home').style.display='none'; $('#app').style.display='flex'; $('#log').scrollTop=$('#log').scrollHeight; }
+function showHome(){ $('#login').style.display='none'; $('#dashboard').style.display='none'; $('#app').style.display='none'; $('#home').style.display='flex'; loadInspiration(); }
+function showDashboard(){ $('#login').style.display='none'; $('#home').style.display='none'; $('#app').style.display='none'; $('#dashboard').style.display='flex'; loadDashboard(); }
+function enterChat(){ $('#login').style.display='none'; $('#home').style.display='none'; $('#dashboard').style.display='none'; $('#app').style.display='flex'; $('#log').scrollTop=$('#log').scrollHeight; }
 
 let currentInsp=null;
 async function loadInspiration(){
@@ -780,6 +792,9 @@ $('#newConv').addEventListener('click',()=>newChat('General'));
 $('#newChatTop').addEventListener('click',()=>newChat('General'));
 $('#logoHome').addEventListener('click',showHome);
 $('#enterChat').addEventListener('click',enterChat);
+$('#viewDashboard').addEventListener('click',showDashboard);
+$('#dashboardChatBtn').addEventListener('click',enterChat);
+$('#dashBtn').addEventListener('click',showDashboard);
 $('#anotherQuote').addEventListener('click',loadInspiration);
 document.querySelectorAll('#rate button').forEach(b=>b.addEventListener('click',()=>rateInspiration(parseInt(b.dataset.r))));
 $('#newFolder').addEventListener('click',()=>{ const f=prompt('New project folder name:'); if(f && f.trim()){ newChat(f.trim()); } });
