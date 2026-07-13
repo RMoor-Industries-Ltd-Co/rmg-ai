@@ -12,14 +12,18 @@ from . import db
 # The PIAAR ecosystem's projects/repos — the dashboard's scaffold. A project with no
 # usage yet still appears (at $0, "not yet reporting") so the shape is ready before the
 # data is. Keys should match how each project identifies itself when it reports usage.
+# `division` mirrors rmg-piaar-system/CLAUDE.md's Divisions registry (the ecosystem's
+# governing taxonomy); `clickup_list_id` is optional — set it once a project's ClickUp
+# list is structured with milestone parent-tasks + subtask-steps (see dashboard.py),
+# and the project dashboard will source live progress from it instead of manual entry.
 PIAAR_PROJECTS = [
-    {"key": "rmg-ai", "label": "ALLEN · rmg-ai"},
-    {"key": "rmg-creator-os", "label": "Master Atelier · rmg-creator-os"},
-    {"key": "cappo-meridian", "label": "Cappo Meridian"},
-    {"key": "axis-tekhen", "label": "Axis Tekhen"},
-    {"key": "connection-circle", "label": "Connection Circle"},
-    {"key": "hvnhavenry-com", "label": "HVN Havenry (Vale)"},
-    {"key": "mytubescript", "label": "MyTubeScript"},
+    {"key": "rmg-ai", "label": "ALLEN · rmg-ai", "division": "ALLEN / ALLIE", "clickup_list_id": None},
+    {"key": "rmg-creator-os", "label": "Master Atelier · rmg-creator-os", "division": "RMG Creator OS", "clickup_list_id": None},
+    {"key": "cappo-meridian", "label": "Cappo Meridian", "division": "AMG / Cappo Management", "clickup_list_id": None},
+    {"key": "axis-tekhen", "label": "Axis Tekhen", "division": "AXIS TEKHEN", "clickup_list_id": None},
+    {"key": "connection-circle", "label": "Connection Circle", "division": "Connection Circle", "clickup_list_id": None},
+    {"key": "hvnhavenry-com", "label": "HVN Havenry (Vale)", "division": "HVN", "clickup_list_id": None},
+    {"key": "mytubescript", "label": "MyTubeScript", "division": "MyTubeScript", "clickup_list_id": None},
 ]
 
 # $ per 1M tokens (input, output) — Anthropic, matched by substring against the model id.

@@ -23,9 +23,9 @@
   #login { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; padding:24px; text-align:center; }
   #login .big { font-size:30px; font-weight:800; letter-spacing:.16em; background:linear-gradient(135deg,var(--gold2),var(--gold)); -webkit-background-clip:text; background-clip:text; color:transparent; }
   #login p { color:var(--muted); max-width:30ch; }
-  /* home */
-  #home { flex:1; display:flex; align-items:center; justify-content:center; padding:24px; overflow-y:auto; }
-  .home-inner { display:flex; flex-direction:column; align-items:center; text-align:center; gap:16px; max-width:560px; }
+  /* home / dashboard */
+  #home { flex:1; display:flex; flex-direction:column; align-items:center; padding:24px; overflow-y:auto; gap:28px; }
+  .home-inner { display:flex; flex-direction:column; align-items:center; text-align:center; gap:16px; max-width:560px; margin:0 auto; }
   .home-logo { width:min(150px,40vw); border-radius:18px; }
   .home-greet { font-size:22px; font-weight:700; }
   .quote { font-size:21px; line-height:1.5; margin:4px 0; color:var(--gold2); font-style:italic; max-width:32ch; }
@@ -155,6 +155,34 @@
   .acct-cycle-set { display:flex; align-items:center; gap:4px; flex:none; }
   .acct-cycle-set input { width:38px; background:var(--bg); border:1px solid var(--line); border-radius:6px; color:var(--text); font-size:11px; padding:2px 4px; text-align:center; }
   .acct-cycle-set button { font-size:11px; padding:2px 6px; border-radius:6px; border:1px solid var(--line); background:var(--panel); color:var(--muted); cursor:pointer; }
+  /* PIAAR project dashboard (landing page) */
+  .dashboard-wrap { width:100%; max-width:960px; margin:0 auto; }
+  .dashboard-head { text-align:center; margin-bottom:16px; }
+  .dashboard-head h3 { margin:0 0 4px; font-size:15px; letter-spacing:.04em; color:var(--gold2); }
+  .project-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px; }
+  .project-card { text-align:left; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 15px; cursor:pointer; display:flex; flex-direction:column; gap:8px; font-family:inherit; color:var(--text); }
+  .project-card:hover { border-color:var(--gold); }
+  .pc-name { font-weight:600; font-size:14px; }
+  .pc-division { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); }
+  .pc-progress-label { font-size:12px; color:var(--muted); display:flex; justify-content:space-between; }
+  .pc-source { font-size:10px; padding:2px 7px; border-radius:999px; white-space:nowrap; align-self:flex-start; }
+  .pc-source.clickup { background:rgba(60,160,100,.15); color:#5fcf8a; }
+  .pc-source.manual { background:rgba(255,255,255,.06); color:var(--muted); }
+  /* milestone timeline drill-down */
+  #milestones { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; z-index:20; }
+  #milestones.open { display:block; }
+  #milestones .sheet { position:absolute; right:0; top:0; bottom:0; width:min(600px,96vw); background:var(--panel); border-left:1px solid var(--line); padding:18px; overflow-y:auto; padding-top:max(18px,env(safe-area-inset-top)); }
+  .milestone-block { border:1px solid var(--line); border-radius:10px; padding:13px 15px; margin-bottom:12px; }
+  .milestone-title { font-weight:600; font-size:14px; margin-bottom:2px; }
+  .milestone-goal { font-size:12px; color:var(--muted); margin-bottom:10px; }
+  .step-line { display:flex; align-items:center; gap:8px; padding:6px 0 6px 12px; font-size:13px; border-left:2px solid var(--line); margin-left:5px; }
+  .step-line .dot { width:8px; height:8px; border-radius:50%; background:var(--line); flex:none; margin-left:-16px; }
+  .step-line.done .dot { background:var(--gold); }
+  .step-line.done .step-text { text-decoration:line-through; color:var(--muted); }
+  .step-goal { border-left-color:var(--gold); }
+  .step-goal .step-text { font-weight:700; color:var(--gold2); }
+  .step-goal .dot { background:transparent; border:2px solid var(--gold); }
+  .step-goal.done .dot { background:var(--gold); border-color:var(--gold); }
 </style>
 </head>
 <body>
@@ -224,11 +252,27 @@
     </div>
     <div class="rate-msg muted" id="rateMsg"></div>
     <div class="home-actions">
-      <button class="btn" id="enterChat">Talk to ALLEN →</button>
+      <button class="btn" id="enterChat">Speak with ALLEN →</button>
       <button class="icon-btn" id="anotherQuote">↻ Another</button>
     </div>
   </div>
+  <div class="dashboard-wrap">
+    <div class="dashboard-head">
+      <h3>PIAAR Projects</h3>
+      <p class="usage-note">Milestone progress across the ecosystem — tap a project for the full timeline.</p>
+    </div>
+    <div class="project-grid" id="projectGrid"></div>
+  </div>
 </div>
+
+<div id="milestones"><div class="sheet">
+  <div class="conv-top">
+    <h3 id="milestonesTitle">Project</h3>
+    <button class="icon-btn" id="milestonesCloseBtn" title="Close">✕</button>
+  </div>
+  <p class="usage-note" id="milestonesDivision"></p>
+  <div id="milestonesBody"></div>
+</div></div>
 
 <div id="convs"><div class="sheet left">
   <div class="conv-top"><h3>💬 Chats</h3><span style="display:flex;gap:6px"><button class="icon-btn" id="newFolder" title="New project folder">📁+</button><button class="icon-btn" id="newConv">+ New</button></span></div>
@@ -281,7 +325,7 @@ async function api(path, opts={}) {
 function showLogin(){ $('#login').style.display='flex'; $('#home').style.display='none'; $('#app').style.display='none'; ['newChatTop','convBtn','memBtn','usageBtn','outBtn'].forEach(id=>$('#'+id).style.display='none'); }
 function showApp(email){ $('#login').style.display='none'; ['newChatTop','convBtn','memBtn','usageBtn','outBtn'].forEach(id=>$('#'+id).style.display=''); if(email) $('#outBtn').title='Sign out ('+email+')'; initChats(); showHome();
   checkMicHealth(); if(!window._micHealthTimer) window._micHealthTimer=setInterval(checkMicHealth, 120000); }
-function showHome(){ $('#login').style.display='none'; $('#app').style.display='none'; $('#home').style.display='flex'; loadInspiration(); }
+function showHome(){ $('#login').style.display='none'; $('#app').style.display='none'; $('#home').style.display='flex'; loadInspiration(); loadDashboard(); }
 function enterChat(){ $('#login').style.display='none'; $('#home').style.display='none'; $('#app').style.display='flex'; $('#log').scrollTop=$('#log').scrollHeight; }
 
 let currentInsp=null;
@@ -542,6 +586,69 @@ function renderCycle(){
     '<span class="days">'+daysLeft+' day'+(daysLeft===1?'':'s')+' left</span></div>'+
     '<div class="track"><div class="fill" style="width:'+pct+'%"></div></div>';
 }
+// PIAAR project dashboard — the landing view's card grid, fed by allen/dashboard.py's
+// hybrid ClickUp/manual milestone data. Labels/divisions come from the server's static
+// PIAAR_PROJECTS registry (trusted), so innerHTML is fine there; milestone/step titles
+// in openMilestones() below can be arbitrary text (a ClickUp task name, or a step logged
+// via chat) so those use textContent, same pattern as conversation titles elsewhere.
+async function loadDashboard(){
+  const grid=$('#projectGrid'); if(!grid) return;
+  try{
+    const r=await api('/console/dashboard/projects'); const d=await r.json();
+    grid.innerHTML='';
+    (d.projects||[]).forEach(p=>{
+      const card=document.createElement('button'); card.type='button'; card.className='project-card';
+      const pct = p.steps_total ? Math.round(100*p.steps_done/p.steps_total) : 0;
+      card.innerHTML =
+        '<div class="pc-name"></div>'+
+        (p.division ? '<div class="pc-division"></div>' : '')+
+        '<div class="mini-track"><div class="mini-fill" style="width:'+pct+'%"></div></div>'+
+        '<div class="pc-progress-label"><span>'+p.steps_done+' / '+p.steps_total+' steps</span><span>'+(p.milestone_count||0)+' milestone'+(p.milestone_count===1?'':'s')+'</span></div>'+
+        '<span class="pc-source '+(p.source==='clickup'?'clickup':'manual')+'">'+(p.source==='clickup'?'ClickUp':'manual')+'</span>';
+      card.querySelector('.pc-name').textContent=p.label;
+      if(p.division) card.querySelector('.pc-division').textContent=p.division;
+      card.onclick=()=>openMilestones(p.key);
+      grid.appendChild(card);
+    });
+  }catch(e){}
+}
+
+async function openMilestones(key){
+  $('#milestones').classList.add('open');
+  $('#milestonesTitle').textContent='Loading…';
+  $('#milestonesDivision').textContent='';
+  const body=$('#milestonesBody'); body.innerHTML='';
+  try{
+    const r=await api('/console/dashboard/projects/'+encodeURIComponent(key)+'/milestones'); const d=await r.json();
+    $('#milestonesTitle').textContent=d.label||key;
+    $('#milestonesDivision').textContent=d.division||'';
+    if(!(d.milestones||[]).length){
+      body.innerHTML='<div class="not-reporting">No milestones tracked yet for this project.</div>';
+      return;
+    }
+    d.milestones.forEach(m=>{
+      const block=document.createElement('div'); block.className='milestone-block';
+      const title=document.createElement('div'); title.className='milestone-title'; title.textContent=m.title;
+      block.appendChild(title);
+      if(m.goal){
+        const goal=document.createElement('div'); goal.className='milestone-goal'; goal.textContent='Goal: '+m.goal;
+        block.appendChild(goal);
+      }
+      (m.steps||[]).forEach(s=>{
+        const line=document.createElement('div'); line.className='step-line'+(s.done?' done':'');
+        const dot=document.createElement('span'); dot.className='dot'; line.appendChild(dot);
+        const text=document.createElement('span'); text.className='step-text'; text.textContent=s.title; line.appendChild(text);
+        block.appendChild(line);
+      });
+      const goalLine=document.createElement('div'); goalLine.className='step-line step-goal'+(m.done?' done':'');
+      const gdot=document.createElement('span'); gdot.className='dot'; goalLine.appendChild(gdot);
+      const gtext=document.createElement('span'); gtext.className='step-text'; gtext.textContent='🏁 '+(m.goal||m.title); goalLine.appendChild(gtext);
+      block.appendChild(goalLine);
+      body.appendChild(block);
+    });
+  }catch(e){ body.innerHTML='<div class="not-reporting">Could not load milestones.</div>'; }
+}
+
 async function loadUsage(){
   renderCycle();
   try{
@@ -682,6 +789,8 @@ $('#mem').addEventListener('click',e=>{ if(e.target.id==='mem') $('#mem').classL
 $('#usageBtn').addEventListener('click',()=>{ $('#usage').classList.add('open'); loadUsage(); });
 $('#usage').addEventListener('click',e=>{ if(e.target.id==='usage') $('#usage').classList.remove('open'); });
 $('#usageHomeBtn').addEventListener('click',()=>{ $('#usage').classList.remove('open'); showHome(); });
+$('#milestones').addEventListener('click',e=>{ if(e.target.id==='milestones') $('#milestones').classList.remove('open'); });
+$('#milestonesCloseBtn').addEventListener('click',()=>{ $('#milestones').classList.remove('open'); });
 $('#memAdd').addEventListener('click',async()=>{ const v=$('#memIn').value.trim(); if(!v) return; await api('/console/memory',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:v})}); $('#memIn').value=''; loadMem(); });
 $('#outBtn').addEventListener('click',async()=>{ await fetch('/auth/logout',{method:'POST',credentials:'same-origin'}); showLogin(); });
 document.querySelectorAll('.starter').forEach(b=>b.addEventListener('click',()=>send(b.textContent)));

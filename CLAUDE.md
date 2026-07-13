@@ -120,7 +120,8 @@ Never paste real secret values into chat or any committed file.
 | `allen/briefing.py` | Rich personal morning briefing (weather, calendar, ClickUp deadline audit, ranked top-5, sourced news, motivational close) — sent alongside (not instead of) `report.py`'s business-lane report |
 | `allen/weather.py` | NWS (api.weather.gov) forecast lookup for the briefing, grounded to Rahm's home location (Villa Rica, GA) — no API key required |
 | `allen/news.py` | RSS-based sourced headlines for the briefing (NPR general, Google News topic-search for AI/tech and finance/markets) — preserves real article links, unlike `tools_web.py`'s `web_fetch` |
-| `allen/usage.py` | Usage & cost tracking — PIAAR project registry, rate tables, the "$" console dashboard's data source |
+| `allen/usage.py` | Usage & cost tracking — PIAAR project registry (`PIAAR_PROJECTS`, also the project-dashboard's scaffold), rate tables, the "$" console dashboard's data source |
+| `allen/dashboard.py` | ALLEN·I·VERSE landing dashboard's hybrid data layer — live ClickUp milestone/subtask hierarchy per project when configured, manual `project_milestones` DB rows otherwise; never fabricates progress for an untracked project |
 | `allen/tech_accounts.py` | Technology-account registry for the "$" dashboard — metered accounts cross-reference usage_log, flat-rate subscriptions show a billing-cycle countdown from a renewal day set via the console |
 | `allen/brand_contracts.py` | Written brand voice performance contracts (allowed ElevenLabs v3 tags, forbidden behaviors, pacing rules, per-intensity tag density) — canonical spec in rmg-piaar-system's contracts/22; `emotion.py`'s `direct()` uses a brand's contract when one exists, else falls back to the older per-brand profile |
 | `allen/config.py` | Pydantic settings (all env vars) |

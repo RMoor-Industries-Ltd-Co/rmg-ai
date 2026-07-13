@@ -17,7 +17,7 @@ from . import db
 # Supported backend actions a form can route a submission to. 'note' is the safe
 # fallback for anything without a dedicated integration yet (including ALLEN's own
 # newly-defined forms) — it never fails to configure, unlike calendar/ClickUp/GitHub.
-ACTIONS = {"calendar_event", "clickup_task", "github_initiative", "note"}
+ACTIONS = {"calendar_event", "clickup_task", "github_initiative", "milestone_update", "note"}
 DOMAINS = {"personal", "project", "business"}
 
 # Starter forms — seeded per-namespace on first use. created_by='system'.
@@ -58,6 +58,20 @@ SEED_FORMS = [
             {"name": "branch", "type": "string", "required": False, "description": "Branch name, if known yet"},
             {"name": "owner", "type": "string", "required": False, "description": "Who's driving — Rahm, Claude Code, or ALLEN"},
             {"name": "goal", "type": "string", "required": True, "description": "One-line goal"},
+        ],
+    },
+    {
+        "key": "project_milestone_step",
+        "label": "Log a PIAAR project milestone step",
+        "domain": "project",
+        "action": "milestone_update",
+        "fields": [
+            {"name": "project_key", "type": "string", "required": True,
+             "description": "PIAAR project key, e.g. connection-circle, rmg-ai, cappo-meridian (see allen/usage.py's PIAAR_PROJECTS for the full list)"},
+            {"name": "milestone_title", "type": "string", "required": True, "description": "The milestone this step belongs to, e.g. 'User profile enhancements for contact management'"},
+            {"name": "goal", "type": "string", "required": False, "description": "The milestone's completion/validation goal, e.g. 'Ship the invite feature'"},
+            {"name": "step_title", "type": "string", "required": True, "description": "The specific step/subtask being logged"},
+            {"name": "done", "type": "boolean", "required": True, "description": "Whether this step is now complete"},
         ],
     },
     {
@@ -263,6 +277,24 @@ def dispatch_submit(namespace: str, tool_name: str, args: dict) -> str:
 
     if action == "github_initiative":
         return _dispatch_github_initiative(args)
+
+    if action == "milestone_update":
+        from . import db as _db
+
+        project_key = args.get("project_key", "")
+        milestone_title = args.get("milestone_title", "")
+        step_title = args.get("step_title", "")
+        done = bool(args.get("done"))
+        if not (project_key and milestone_title and step_title):
+            return "Missing project_key, milestone_title, or step_title."
+        goal = args.get("goal") or ""
+        if goal and not _db.get_milestone(project_key, milestone_title):
+            _db.upsert_milestone(project_key, milestone_title, goal, [], created_by="allen")
+        m = _db.set_step_done(project_key, milestone_title, step_title, done)
+        if not m:
+            return f"Could not find or create milestone '{milestone_title}' for {project_key}."
+        status = "done" if done else "not done"
+        return f"Logged: {project_key} · {milestone_title} · {step_title} → {status}."
 
     # 'note' — the universal fallback, including every form ALLEN defines himself
     # until a maintainer wires it to a dedicated backend.

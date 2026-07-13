@@ -162,6 +162,26 @@ def init_db() -> None:
                 created_at timestamptz DEFAULT now()
             );
             CREATE UNIQUE INDEX IF NOT EXISTS virtual_forms_ns_key_idx ON virtual_forms (namespace, key);
+
+            -- Manual-fallback milestone tracking for the ALLEN·I·VERSE project dashboard
+            -- (allen/dashboard.py). Used only for PIAAR projects (see allen/usage.py's
+            -- PIAAR_PROJECTS) whose ClickUp list isn't yet structured with milestone
+            -- parent-tasks + subtask-steps — once it is, the dashboard sources live from
+            -- ClickUp instead and these rows just go unread for that project. `steps` is
+            -- an ordered jsonb array of {id, title, done}. created_by 'system'/'allen' =
+            -- entered via the project_milestone_step virtual form in chat.
+            CREATE TABLE IF NOT EXISTS project_milestones (
+                id text PRIMARY KEY,
+                project_key text NOT NULL,
+                title text NOT NULL,
+                goal text,
+                steps jsonb NOT NULL DEFAULT '[]',
+                source text NOT NULL DEFAULT 'manual',
+                created_by text NOT NULL DEFAULT 'system',
+                created_at timestamptz DEFAULT now(),
+                updated_at timestamptz DEFAULT now()
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS project_milestones_key_title_idx ON project_milestones (project_key, title);
             """
         )
 
@@ -633,3 +653,64 @@ def upsert_form(
             (fid, namespace, key, label, domain, action, json.dumps(fields), created_by),
         )
         return cur.fetchone()
+
+
+def list_milestones(project_key: str) -> list[dict]:
+    """Manual-fallback milestones for a project (see allen/dashboard.py for the hybrid
+    ClickUp/manual merge). Returns [] if the DB isn't configured — the dashboard treats
+    that the same as "no milestones yet," never an error."""
+    if not db_ready():
+        return []
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT project_key, title, goal, steps, source, created_by, created_at, updated_at "
+            "FROM project_milestones WHERE project_key = %s ORDER BY created_at",
+            (project_key,),
+        )
+        return list(cur.fetchall())
+
+
+def get_milestone(project_key: str, title: str) -> Optional[dict]:
+    if not db_ready():
+        return None
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT project_key, title, goal, steps, source, created_by, created_at, updated_at "
+            "FROM project_milestones WHERE project_key = %s AND title = %s",
+            (project_key, title),
+        )
+        return cur.fetchone()
+
+
+def upsert_milestone(
+    project_key: str, title: str, goal: str = "", steps: Optional[list] = None, created_by: str = "system",
+) -> dict:
+    """Create or fully replace a milestone's step list. Steps: [{id, title, done}, ...]."""
+    mid = f"ms-{project_key}-{title}"
+    with _cursor() as cur:
+        cur.execute(
+            "INSERT INTO project_milestones (id, project_key, title, goal, steps, created_by) "
+            "VALUES (%s, %s, %s, %s, %s, %s) "
+            "ON CONFLICT (project_key, title) DO UPDATE SET "
+            "goal = EXCLUDED.goal, steps = EXCLUDED.steps, updated_at = now() "
+            "RETURNING project_key, title, goal, steps, source, created_by, created_at, updated_at",
+            (mid, project_key, title, goal, json.dumps(steps or []), created_by),
+        )
+        return cur.fetchone()
+
+
+def set_step_done(project_key: str, milestone_title: str, step_title: str, done: bool) -> Optional[dict]:
+    """Flip one step's done flag within a milestone, adding the step if it doesn't exist
+    yet (so ALLEN can log a newly-completed step without Rahm having pre-defined the
+    full step list up front). Returns the updated milestone, or None if it doesn't exist
+    and no steps were given to create it from."""
+    existing = get_milestone(project_key, milestone_title)
+    steps = list(existing["steps"]) if existing else []
+    for s in steps:
+        if s.get("title") == step_title:
+            s["done"] = done
+            break
+    else:
+        steps.append({"id": f"step-{len(steps) + 1}", "title": step_title, "done": done})
+    goal = existing["goal"] if existing else ""
+    return upsert_milestone(project_key, milestone_title, goal, steps, created_by="allen")

@@ -274,6 +274,42 @@ def _get_task(task_id: str) -> str:
     )
 
 
+def get_clickup_milestones(list_id: str) -> list[dict]:
+    """Structured milestone/subtask hierarchy for the project dashboard (allen/dashboard.py)
+    — NOT an agent tool, called directly since the dashboard needs real JSON, not the
+    string-flattened shape _list_tasks returns for Claude's tool loop.
+
+    ClickUp's list-tasks response returns subtasks as flat sibling entries carrying a
+    `parent` field pointing at their parent task's id (when `subtasks=true` is passed).
+    A task with no `parent` is treated as a milestone; a task whose `parent` matches
+    another task's id becomes that milestone's step. Tasks whose parent isn't in this
+    same list (e.g. a subtask of a task outside the fetched page) are dropped rather
+    than guessed at."""
+    data = _get(f"/list/{list_id}/task", {"include_closed": "true", "subtasks": "true"})
+    tasks = data.get("tasks", [])
+
+    children: dict[str, list[dict]] = {}
+    milestones: dict[str, dict] = {}
+    for t in tasks:
+        status = ((t.get("status") or {}).get("status") or "").lower()
+        done = status in ("complete", "closed", "done")
+        parent = t.get("parent")
+        if parent:
+            children.setdefault(parent, []).append({"id": t["id"], "title": t.get("name", ""), "done": done})
+        else:
+            milestones[t["id"]] = {
+                "id": t["id"], "title": t.get("name", ""), "goal": t.get("name", ""),
+                "done": done, "source": "clickup",
+            }
+
+    out = []
+    for mid, m in milestones.items():
+        steps = children.get(mid, [])
+        m["steps"] = steps
+        out.append(m)
+    return out
+
+
 def handle(name: str, args: dict, scope: str = "all") -> str:
     """scope: 'all' | 'business' (RMG/RMI, ALLIE) | 'personal' (PERSONAL SYSTEMS, ALLEN direct)."""
     if not settings.clickup_ready:

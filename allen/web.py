@@ -19,7 +19,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, Response, Upl
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.responses import Response as RawResponse
 
-from . import agent, classify, db, google_auth, media, memory, speech, tech_accounts, tools_calendar, usage
+from . import agent, classify, dashboard, db, google_auth, media, memory, speech, tech_accounts, tools_calendar, usage
 from .config import settings
 
 router = APIRouter()
@@ -418,6 +418,21 @@ def console_usage(request: Request, days: int = 30) -> dict:
     console (no separate admin key needed; the console is already single-user-gated)."""
     _session_user(request)
     return usage.dashboard(days=days)
+
+
+@router.get("/console/dashboard/projects")
+def console_dashboard_projects(request: Request) -> dict:
+    """Data source for the ALLEN·I·VERSE landing dashboard — one summary card per PIAAR
+    project. Session-gated same as the rest of the console."""
+    _session_user(request)
+    return {"projects": dashboard.get_project_summaries()}
+
+
+@router.get("/console/dashboard/projects/{key}/milestones")
+def console_dashboard_project_milestones(request: Request, key: str) -> dict:
+    """Drill-down data for one project's milestone/step timeline."""
+    _session_user(request)
+    return dashboard.get_project_milestones(key)
 
 
 @router.post("/console/usage/accounts/{account_key}/cycle")
