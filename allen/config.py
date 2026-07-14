@@ -73,6 +73,13 @@ class Settings(BaseSettings):
     cappo_agent_url: str = "https://cappo.apex-meridian-group.com/api/agent"
     cappo_agent_key: str = ""
 
+    # Constance — Connection Circle's project-owner agent, reachable by ALLIE's
+    # delegate_to_constance (keyed M2M call). Aggregate-metrics-only by design — see
+    # connection-circle/CLAUDE.md's privacy rule; never send it a request for an
+    # individual user's private relationship data.
+    constance_agent_url: str = "https://api.connectioncircle.app/api/agent"
+    constance_agent_key: str = ""
+
     # Google — unified OAuth for Calendar + Gmail + Drive across all accounts.
     google_oauth_client_id: str = ""
     google_oauth_client_secret: str = ""
@@ -120,6 +127,10 @@ class Settings(BaseSettings):
     # delegate_to_cappo task endpoint). Defaults to the same host's /api/agent/report.
     cappo_report_url: str = ""     # e.g. https://cappo.apex-meridian-group.com/api/agent/report
 
+    # Constance's cached executive report (distinct from constance_agent_url's live
+    # delegate_to_constance task endpoint). Aggregate-metrics-only, see privacy note above.
+    constance_report_url: str = ""  # e.g. https://api.connectioncircle.app/api/agent/report
+
     @property
     def whatsapp_ready(self) -> bool:
         return bool(
@@ -144,6 +155,10 @@ class Settings(BaseSettings):
     @property
     def cappo_ready(self) -> bool:
         return bool(self.cappo_agent_url and self.cappo_agent_key)
+
+    @property
+    def constance_ready(self) -> bool:
+        return bool(self.constance_agent_url and self.constance_agent_key)
 
     @property
     def calendar_ready(self) -> bool:
@@ -202,10 +217,19 @@ class Settings(BaseSettings):
         return bool(self.cappo_report_url and self.cappo_agent_key)
 
     @property
+    def constance_report_ready(self) -> bool:
+        return bool(self.constance_report_url and self.constance_agent_key)
+
+    @property
     def agent_rollup_ready(self) -> bool:
         """Whether ALLEN's scheduled executive-rollup job has at least one real domain source
         to pull from — gates the rollup scheduler job the same way feed_watch_ready gates its."""
-        return bool(self.cappo_report_ready or self.anpu_reviews_ready or self.thoth_status_ready)
+        return bool(
+            self.cappo_report_ready
+            or self.anpu_reviews_ready
+            or self.thoth_status_ready
+            or self.constance_report_ready
+        )
 
 
 settings = Settings()

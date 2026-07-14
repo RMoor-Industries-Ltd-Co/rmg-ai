@@ -62,7 +62,7 @@ def run(task: str, namespace: str) -> str:
     """Delegation entrypoint — ALLEN hands ALLIE a task. She works it AGENTICALLY: pulling live data
     from ClickUp (projects) and Notion (knowledge base) before answering, scoped to the business
     spaces, then returns organized findings for ALLEN to synthesize."""
-    from . import tools_anpu, tools_cappo, tools_clickup, tools_gdrive, tools_notion, tools_thoth, tools_youtube
+    from . import tools_anpu, tools_cappo, tools_clickup, tools_constance, tools_gdrive, tools_notion, tools_thoth, tools_youtube
     from .config import settings
 
     context = memory.allie_context(namespace)
@@ -73,6 +73,8 @@ def run(task: str, namespace: str) -> str:
         tools += tools_notion.TOOLS
     if tools_cappo.ready():
         tools += tools_cappo.TOOLS  # delegate AMG work down to Cappo, or pull his cached report
+    if tools_constance.ready():
+        tools += tools_constance.TOOLS  # delegate to Constance (Connection Circle), or pull her cached report
     if tools_anpu.ready():
         tools += tools_anpu.TOOLS  # pull AXIS/Anpu's already-cached oversight reviews
     if tools_thoth.ready():
@@ -97,6 +99,9 @@ def run(task: str, namespace: str) -> str:
         "instead when you just need his latest status (already cached, instant — don't delegate live work just "
         "to check on things). You manage and "
         "relay; Cappo does the AMG legwork.\n"
+        "• CONNECTION CIRCLE: for anything about Connection Circle, DELEGATE to Constance via "
+        "delegate_to_constance, or pull constance_get_report for her latest status. She only reasons over "
+        "aggregate product metrics — never ask her about a specific user's private relationship data.\n"
         "• YouTube INGEST: youtube_ingest(url) downloads audio (MP3), transcript (plain text), and optionally "
         "video (MP4) from any YouTube URL and saves the files to Google Drive (rahm@rmasters.group). Use this "
         "when sourcing research material, b-roll references, or script inspiration from YouTube. Set "
@@ -130,6 +135,12 @@ def run(task: str, namespace: str) -> str:
             return res
         if name == "cappo_get_report":
             return tools_cappo.get_report()
+        if name == "delegate_to_constance":
+            res = tools_constance.handle(inp.get("task", ""))
+            db.add_audit(namespace, "allie", "delegate_to_constance", inp.get("task", ""), res)
+            return res
+        if name == "constance_get_report":
+            return tools_constance.get_report()
         if name == "anpu_get_reviews":
             return tools_anpu.handle(name, inp)
         if name == "thoth_get_status":
