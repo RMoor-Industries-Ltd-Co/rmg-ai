@@ -35,6 +35,16 @@ def _run_feed_watch() -> None:
         logger.error("[scheduler] feed watch failed: %s", exc)
 
 
+def _run_agent_rollup() -> None:
+    from . import rollup
+
+    logger.info("[scheduler] firing agent rollup")
+    try:
+        rollup.refresh()
+    except Exception as exc:
+        logger.error("[scheduler] agent rollup failed: %s", exc)
+
+
 def start() -> None:
     """Start the cron scheduler. Each job independently no-ops if its own
     prerequisites aren't configured (WhatsApp for the daily report, Thoth/
@@ -70,6 +80,13 @@ def start() -> None:
         )
     else:
         logger.info("[scheduler] feed watch not configured (needs FEED_WATCH_ENABLED, tickers, Thoth URL/token)")
+
+    if settings.agent_rollup_ready:
+        _scheduler.add_job(_run_agent_rollup, "interval", hours=6, id="agent_rollup")
+        jobs_added = True
+        logger.info("[scheduler] agent rollup scheduled every 6 hours")
+    else:
+        logger.info("[scheduler] agent rollup not configured (needs CAPPO_REPORT_URL, ANPU_REVIEWS_URL, or THOTH_STATUS_URL)")
 
     if not jobs_added:
         _scheduler = None

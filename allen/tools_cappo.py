@@ -25,7 +25,16 @@ TOOLS = [
             },
             "required": ["task"],
         },
-    }
+    },
+    {
+        "name": "cappo_get_report",
+        "description": (
+            "Pull Cappo's latest cached AMG executive status report — already generated on a schedule, "
+            "instant to read. Use this for 'what's going on in AMG' instead of delegate_to_cappo, which "
+            "does live work; this just reads what Cappo already prepared."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
 ]
 
 
@@ -34,6 +43,8 @@ def ready() -> bool:
 
 
 def handle(task: str) -> str:
+    """delegate_to_cappo — live, synchronous task delegation. Kept as a plain (task) signature
+    since this is the original, most-used call shape (allie.py calls it directly)."""
     if not ready():
         return "Cappo isn't connected yet."
     try:
@@ -49,3 +60,23 @@ def handle(task: str) -> str:
         return r.json().get("reply", "(Cappo returned nothing)")
     except Exception as e:
         return f"Cappo call failed: {e}"
+
+
+def get_report() -> str:
+    """cappo_get_report — pull-only, reads Cappo's already-cached executive report. Distinct
+    endpoint from delegate_to_cappo's live task endpoint; never triggers live work."""
+    if not settings.cappo_report_ready:
+        return "Cappo's cached report isn't connected yet."
+    try:
+        r = requests.get(
+            settings.cappo_report_url,
+            headers={"x-agent-key": settings.cappo_agent_key},
+            timeout=30,
+        )
+        if r.status_code == 401:
+            return "Cappo rejected the call (auth key mismatch)."
+        r.raise_for_status()
+        d = r.json()
+        return d.get("report_text") or d.get("report") or "(no report cached yet)"
+    except Exception as e:
+        return f"Cappo report pull failed: {e}"
