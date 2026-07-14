@@ -37,7 +37,7 @@ def handle(_name: str, _args: dict) -> str:
             return "Thoth rejected the call (auth mismatch)."
         r.raise_for_status()
         data = r.json()
-        candidates = data.get("candidates", data if isinstance(data, list) else [])
+        candidates = data if isinstance(data, list) else data.get("candidates", [])
         if not candidates:
             return "No hot candidates on Thoth's board right now."
         lines = []

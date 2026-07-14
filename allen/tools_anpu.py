@@ -37,7 +37,7 @@ def handle(_name: str, _args: dict) -> str:
             return "Anpu rejected the call (auth mismatch)."
         r.raise_for_status()
         data = r.json()
-        reviews = data.get("reviews", data if isinstance(data, list) else [])
+        reviews = data if isinstance(data, list) else data.get("reviews", [])
         if not reviews:
             return "No Anpu reviews yet."
         lines = []
