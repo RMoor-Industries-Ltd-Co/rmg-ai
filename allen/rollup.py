@@ -21,6 +21,21 @@ _SOURCES = [
     ("thoth", lambda: tools_thoth.handle("thoth_get_status", {}), tools_thoth.ready),
 ]
 
+_FAILURE_MARKERS = (
+    "isn't connected yet.",
+    "rejected the call",
+    "call failed:",
+    "pull failed:",
+)
+
+
+def _pull_failed(text: str) -> bool:
+    """The fetch helpers (tools_cappo/anpu/thoth) return a friendly string on failure instead
+    of raising, since they're also used directly as ALLIE's chat tool handlers. The rollup job
+    needs to tell those apart from a real report before caching them as ok=True."""
+    return any(marker in text for marker in _FAILURE_MARKERS)
+
+
 _SYNTHESIS_PROMPT = """\
 Rahm's PIAAR domain agents just reported their latest status. Write a tight executive rollup \
 for ALLEN to hand Rahm on request — 3-5 sentences max, plain language, only real findings \
@@ -40,6 +55,10 @@ def refresh() -> None:
             continue
         try:
             text = fetch()
+            if _pull_failed(text):
+                logger.error("[rollup] pulling %s failed: %s", source, text)
+                db.set_agent_report(source, text, ok=False)
+                continue
             db.set_agent_report(source, text, ok=True)
             pulled[source] = text
         except Exception as exc:

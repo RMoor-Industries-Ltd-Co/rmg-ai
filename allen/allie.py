@@ -72,7 +72,9 @@ def run(task: str, namespace: str) -> str:
     if settings.notion_ready:
         tools += tools_notion.TOOLS
     if tools_cappo.ready():
-        tools += tools_cappo.TOOLS  # delegate AMG work down to Cappo, or pull his cached report
+        tools += tools_cappo.TOOLS  # delegate AMG work down to Cappo
+    if settings.cappo_report_ready:
+        tools += tools_cappo.REPORT_TOOLS  # pull his cached report (separate URL from delegation)
     if tools_constance.ready():
         tools += tools_constance.TOOLS  # delegate to Constance (Connection Circle), or pull her cached report
     if tools_anpu.ready():

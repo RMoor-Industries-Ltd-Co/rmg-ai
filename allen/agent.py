@@ -22,6 +22,20 @@ def _format_audit(rows: list) -> str:
         lines.append(f"[{ts}] {r['actor'].upper()} · {r['action']} — {what}")
     return "\n".join(lines)
 
+
+def _format_agent_rollup(rows: list) -> str:
+    if not rows:
+        return "No agent rollup has been generated yet — no PIAAR domain sources are configured."
+    by_source = {r["source"]: r for r in rows}
+    rollup = by_source.pop("allen_rollup", None)
+    lines = []
+    if rollup and rollup.get("report_text"):
+        lines.append(rollup["report_text"])
+    for source, r in by_source.items():
+        status = "" if r.get("ok", True) else " (last pull failed)"
+        lines.append(f"\n{source.upper()}{status}: {r.get('report_text') or '(no report yet)'}")
+    return "\n".join(lines) if lines else "No agent rollup has been generated yet."
+
 ALLEN_TOOLS = [
     {
         "name": "delegate_to_allie",
@@ -55,6 +69,16 @@ ALLEN_TOOLS = [
             "type": "object",
             "properties": {"limit": {"type": "integer", "description": "how many recent entries (default 20)"}},
         },
+    },
+    {
+        "name": "get_agent_rollup",
+        "description": (
+            "Read your latest PIAAR ecosystem executive rollup — a short synthesis across Cappo (AMG), "
+            "Anpu, and Thoth (AXIS), already generated on a schedule and instant to read. Use this when "
+            "Rahm asks what's going on across the ecosystem, PIAAR status, or a cross-domain summary — "
+            "don't delegate to ALLIE just to check on things that are already cached here."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
     },
 ]
 
@@ -230,6 +254,8 @@ def respond_agentic(
             return res
         if name == "review_activity":
             return _format_audit(db.list_audit(namespace, inp.get("limit", 20)))
+        if name == "get_agent_rollup":
+            return _format_agent_rollup(db.list_agent_reports())
         if name.startswith("clickup_"):
             res = tools_clickup.handle(name, inp, scope="personal")  # ALLEN direct = personal systems only
             if name in tools_clickup.WRITE_NAMES:

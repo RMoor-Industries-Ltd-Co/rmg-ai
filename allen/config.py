@@ -223,12 +223,17 @@ class Settings(BaseSettings):
     @property
     def agent_rollup_ready(self) -> bool:
         """Whether ALLEN's scheduled executive-rollup job has at least one real domain source
-        to pull from — gates the rollup scheduler job the same way feed_watch_ready gates its."""
+        to pull from — gates the rollup scheduler job the same way feed_watch_ready gates its.
+        Also requires a database, since the job's only job is to cache into agent_reports
+        (db.set_agent_report) — without one, db._cursor() just raises on every run."""
         return bool(
-            self.cappo_report_ready
-            or self.anpu_reviews_ready
-            or self.thoth_status_ready
-            or self.constance_report_ready
+            self.database_url
+            and (
+                self.cappo_report_ready
+                or self.anpu_reviews_ready
+                or self.thoth_status_ready
+                or self.constance_report_ready
+            )
         )
 
 

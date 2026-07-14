@@ -26,6 +26,13 @@ TOOLS = [
             "required": ["task"],
         },
     },
+]
+
+# Separate from TOOLS: cappo_get_report needs its own CAPPO_REPORT_URL configured (the
+# Cappo_Meridian companion scheduler + endpoint), which is independent of delegate_to_cappo's
+# CAPPO_AGENT_URL. Gate this on settings.cappo_report_ready specifically — not just
+# tools_cappo.ready() — so it's never advertised (and silently no-op'd) before it's wired up.
+REPORT_TOOLS = [
     {
         "name": "cappo_get_report",
         "description": (
