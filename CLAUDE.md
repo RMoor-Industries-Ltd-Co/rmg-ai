@@ -119,6 +119,7 @@ Never paste real secret values into chat or any committed file.
 | `allen/scheduler.py` | Background scheduler — daily WhatsApp rich morning briefing + business report + feed-watch interval job + 6-hourly agent rollup |
 | `allen/tools_anpu.py` | Pull-only tool reading AXIS/Anpu's already-cached oversight reviews (axis-tekhen's own autonomous worker) — never triggers Anpu |
 | `allen/tools_thoth.py` | Pull-only tool reading AXIS/Thoth's already-cached candidate board — never triggers a rescan |
+| `allen/tools_constance.py` | Delegate + pull-report tools for Constance — Connection Circle's project-owner agent; aggregate-metrics-only by design, never individual users' private data |
 | `allen/rollup.py` | ALLEN's executive rollup — pulls Cappo/Anpu/Thoth's cached reports, synthesizes a summary, stores both in `agent_reports` so it's instant when Rahm asks, never live-computed on request |
 | `allen/briefing.py` | Rich personal morning briefing (weather, calendar, ClickUp deadline audit, ranked top-5, sourced news, motivational close) — sent alongside (not instead of) `report.py`'s business-lane report |
 | `allen/weather.py` | NWS (api.weather.gov) forecast lookup for the briefing, grounded to Rahm's home location (Villa Rica, GA) — no API key required |
