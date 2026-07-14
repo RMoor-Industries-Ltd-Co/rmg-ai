@@ -62,7 +62,7 @@ def run(task: str, namespace: str) -> str:
     """Delegation entrypoint — ALLEN hands ALLIE a task. She works it AGENTICALLY: pulling live data
     from ClickUp (projects) and Notion (knowledge base) before answering, scoped to the business
     spaces, then returns organized findings for ALLEN to synthesize."""
-    from . import tools_cappo, tools_clickup, tools_gdrive, tools_notion, tools_youtube
+    from . import tools_anpu, tools_cappo, tools_clickup, tools_gdrive, tools_notion, tools_thoth, tools_youtube
     from .config import settings
 
     context = memory.allie_context(namespace)
@@ -72,7 +72,11 @@ def run(task: str, namespace: str) -> str:
     if settings.notion_ready:
         tools += tools_notion.TOOLS
     if tools_cappo.ready():
-        tools += tools_cappo.TOOLS  # delegate AMG work down to Cappo
+        tools += tools_cappo.TOOLS  # delegate AMG work down to Cappo, or pull his cached report
+    if tools_anpu.ready():
+        tools += tools_anpu.TOOLS  # pull AXIS/Anpu's already-cached oversight reviews
+    if tools_thoth.ready():
+        tools += tools_thoth.TOOLS  # pull AXIS/Thoth's already-cached candidate board
     if tools_youtube.ready():
         tools += tools_youtube.TOOLS  # YouTube → Drive for research + b-roll
     if tools_gdrive.ready():
@@ -89,7 +93,9 @@ def run(task: str, namespace: str) -> str:
         "clickup_delete_task.\n"
         "• Notion READ: notion_search, then notion_get_page.\n"
         "• AMG: you do NOT touch AMG directly. For any AMG (Apex Meridian Group) work, DELEGATE to Cappo via "
-        "delegate_to_cappo — he is the AMG AI under you who executes in AMG's own systems. You manage and "
+        "delegate_to_cappo — he is the AMG AI under you who executes in AMG's own systems. Use cappo_get_report "
+        "instead when you just need his latest status (already cached, instant — don't delegate live work just "
+        "to check on things). You manage and "
         "relay; Cappo does the AMG legwork.\n"
         "• YouTube INGEST: youtube_ingest(url) downloads audio (MP3), transcript (plain text), and optionally "
         "video (MP4) from any YouTube URL and saves the files to Google Drive (rahm@rmasters.group). Use this "
@@ -100,6 +106,9 @@ def run(task: str, namespace: str) -> str:
         "read text content. Use for research, verifying what exists, pulling source material.\n"
         "• DRIVE WRITE: drive_create_folder, drive_create_file, drive_update_file, drive_move_file, "
         "drive_delete_file (moves to Trash). Use for organizing, saving research outputs, or filing records.\n"
+        "• AXIS status: anpu_get_reviews and thoth_get_status are read-only pulls of what AXIS's own agents "
+        "(Anpu, Thoth) have already found — they run autonomously inside axis-tekhen, you don't trigger them, "
+        "just read their latest output when a rollup or status question touches AXIS.\n"
         "DISCIPLINE: always read first to get the correct ids before you change anything — never write to an "
         "id you haven't verified. Make exactly the changes the task calls for, nothing extra. Delete only "
         "when clearly asked. When finished, hand ALLEN a tight summary of what you FOUND and what you CHANGED "
@@ -119,6 +128,12 @@ def run(task: str, namespace: str) -> str:
             res = tools_cappo.handle(inp.get("task", ""))
             db.add_audit(namespace, "allie", "delegate_to_cappo", inp.get("task", ""), res)
             return res
+        if name == "cappo_get_report":
+            return tools_cappo.get_report()
+        if name == "anpu_get_reviews":
+            return tools_anpu.handle(name, inp)
+        if name == "thoth_get_status":
+            return tools_thoth.handle(name, inp)
         if name.startswith("youtube_"):
             res = tools_youtube.handle(name, inp)
             db.add_audit(namespace, "allie", name, inp.get("url", ""), res[:200])

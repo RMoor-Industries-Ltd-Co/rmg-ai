@@ -106,6 +106,20 @@ class Settings(BaseSettings):
     thoth_ingest_token: str = ""             # shared secret, must match axis-tekhen's THOTH_INGEST_TOKEN
     youtube_data_api_key: str = ""           # YouTube Data API v3 key — separate from yt-dlp ingest, needed for search
 
+    # Anpu — axis-tekhen's autonomous LLM oversight agent. Pull-only: ALLIE reads Anpu's
+    # already-persisted structured reviews; ALLIE never triggers Anpu to run (Anpu is its own
+    # always-on worker, independent of ALLEN-I-VERSE).
+    anpu_reviews_url: str = ""     # e.g. https://axis-tekhen.rmasters.group/api/system/anpu/reviews
+    anpu_reviews_token: str = ""   # optional bearer token, if axis-tekhen's endpoint requires one
+
+    # Thoth — axis-tekhen's gap-scanner manager. Pull-only status summary (candidate board).
+    thoth_status_url: str = ""     # e.g. https://axis-tekhen.rmasters.group/api/stocks/thoth/candidates
+    thoth_status_token: str = ""   # optional bearer token, if required
+
+    # Cappo's cached executive report (distinct from cappo_agent_url, which is the live
+    # delegate_to_cappo task endpoint). Defaults to the same host's /api/agent/report.
+    cappo_report_url: str = ""     # e.g. https://cappo.apex-meridian-group.com/api/agent/report
+
     @property
     def whatsapp_ready(self) -> bool:
         return bool(
@@ -174,6 +188,24 @@ class Settings(BaseSettings):
     @property
     def youtube_search_ready(self) -> bool:
         return bool(self.youtube_data_api_key)
+
+    @property
+    def anpu_reviews_ready(self) -> bool:
+        return bool(self.anpu_reviews_url)
+
+    @property
+    def thoth_status_ready(self) -> bool:
+        return bool(self.thoth_status_url)
+
+    @property
+    def cappo_report_ready(self) -> bool:
+        return bool(self.cappo_report_url and self.cappo_agent_key)
+
+    @property
+    def agent_rollup_ready(self) -> bool:
+        """Whether ALLEN's scheduled executive-rollup job has at least one real domain source
+        to pull from — gates the rollup scheduler job the same way feed_watch_ready gates its."""
+        return bool(self.cappo_report_ready or self.anpu_reviews_ready or self.thoth_status_ready)
 
 
 settings = Settings()

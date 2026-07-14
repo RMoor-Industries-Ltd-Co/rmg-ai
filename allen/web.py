@@ -435,6 +435,15 @@ def console_dashboard_project_milestones(request: Request, key: str) -> dict:
     return dashboard.get_project_milestones(key)
 
 
+@router.get("/console/agent-rollup")
+def console_agent_rollup(request: Request) -> dict:
+    """ALLEN's cached executive rollup across PIAAR domain agents (Cappo, Anpu, Thoth) — always
+    instant, never triggers live work. Populated by the agent_rollup scheduler job
+    (allen/rollup.py); may be empty/stale if that job hasn't run yet or no domain is configured."""
+    _session_user(request)
+    return {"reports": db.list_agent_reports()}
+
+
 @router.post("/console/usage/accounts/{account_key}/cycle")
 def console_usage_set_cycle(request: Request, account_key: str, body: dict) -> dict:
     """Set a flat-rate technology account's billing-cycle renewal day (1-28), so its

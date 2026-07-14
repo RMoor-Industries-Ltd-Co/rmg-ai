@@ -182,6 +182,20 @@ def init_db() -> None:
                 updated_at timestamptz DEFAULT now()
             );
             CREATE UNIQUE INDEX IF NOT EXISTS project_milestones_key_title_idx ON project_milestones (project_key, title);
+
+            -- ALLEN's cache of pull-ready reports from each PIAAR domain agent (Cappo, Anpu,
+            -- Thoth, ...), plus his own synthesized executive rollup (source = 'allen_rollup').
+            -- One row per source — ALLIE pulls each domain's already-cached report on a
+            -- schedule (allen/scheduler.py) instead of triggering live work every time Rahm
+            -- asks, matching the "ready to go" reporting law in rmg-piaar-system.
+            CREATE TABLE IF NOT EXISTS agent_reports (
+                id text PRIMARY KEY,
+                source text NOT NULL,
+                report_text text NOT NULL,
+                ok boolean NOT NULL DEFAULT true,
+                fetched_at timestamptz DEFAULT now()
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS agent_reports_source_idx ON agent_reports (source);
             """
         )
 
@@ -714,3 +728,35 @@ def set_step_done(project_key: str, milestone_title: str, step_title: str, done:
         steps.append({"id": f"step-{len(steps) + 1}", "title": step_title, "done": done})
     goal = existing["goal"] if existing else ""
     return upsert_milestone(project_key, milestone_title, goal, steps, created_by="allen")
+
+
+def get_agent_report(source: str) -> Optional[dict]:
+    if not db_ready():
+        return None
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT source, report_text, ok, fetched_at FROM agent_reports WHERE source = %s",
+            (source,),
+        )
+        return cur.fetchone()
+
+
+def list_agent_reports() -> list[dict]:
+    if not db_ready():
+        return []
+    with _cursor() as cur:
+        cur.execute("SELECT source, report_text, ok, fetched_at FROM agent_reports ORDER BY source")
+        return list(cur.fetchall())
+
+
+def set_agent_report(source: str, report_text: str, ok: bool = True) -> dict:
+    rid = f"report-{source}"
+    with _cursor() as cur:
+        cur.execute(
+            "INSERT INTO agent_reports (id, source, report_text, ok) VALUES (%s, %s, %s, %s) "
+            "ON CONFLICT (source) DO UPDATE SET "
+            "report_text = EXCLUDED.report_text, ok = EXCLUDED.ok, fetched_at = now() "
+            "RETURNING source, report_text, ok, fetched_at",
+            (rid, source, report_text, ok),
+        )
+        return cur.fetchone()

@@ -116,7 +116,10 @@ Never paste real secret values into chat or any committed file.
 | `allen/forms.py` | Virtual forms — dynamically-generated submit_form_* tools (schedule appointment, PIAAR initiative, business task, ...) so Claude's native required-param enforcement makes ALLEN ask instead of guess; ALLEN can define new ones himself |
 | `allen/tools_market_feed.py` | Market-feed scanner (yfinance, YouTube) for "hot instrument" signals — standalone, non-agentic, unrelated to `allie.py` despite historical naming |
 | `allen/feed_watch.py` | Feed-watch job — scans configured tickers, pushes signals to Thoth (axis-tekhen) |
-| `allen/scheduler.py` | Background scheduler — daily WhatsApp rich morning briefing + business report + feed-watch interval job |
+| `allen/scheduler.py` | Background scheduler — daily WhatsApp rich morning briefing + business report + feed-watch interval job + 6-hourly agent rollup |
+| `allen/tools_anpu.py` | Pull-only tool reading AXIS/Anpu's already-cached oversight reviews (axis-tekhen's own autonomous worker) — never triggers Anpu |
+| `allen/tools_thoth.py` | Pull-only tool reading AXIS/Thoth's already-cached candidate board — never triggers a rescan |
+| `allen/rollup.py` | ALLEN's executive rollup — pulls Cappo/Anpu/Thoth's cached reports, synthesizes a summary, stores both in `agent_reports` so it's instant when Rahm asks, never live-computed on request |
 | `allen/briefing.py` | Rich personal morning briefing (weather, calendar, ClickUp deadline audit, ranked top-5, sourced news, motivational close) — sent alongside (not instead of) `report.py`'s business-lane report |
 | `allen/weather.py` | NWS (api.weather.gov) forecast lookup for the briefing, grounded to Rahm's home location (Villa Rica, GA) — no API key required |
 | `allen/news.py` | RSS-based sourced headlines for the briefing (NPR general, Google News topic-search for AI/tech and finance/markets) — preserves real article links, unlike `tools_web.py`'s `web_fetch` |
