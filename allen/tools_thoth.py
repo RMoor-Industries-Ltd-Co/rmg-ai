@@ -1,8 +1,9 @@
 """Thoth — axis-tekhen's gap-scanner manager (rmg-piaar-system contract 22). Pull-only status
-read: Thoth's candidate board is already built/cached inside axis-tekhen (rebuilt reactively
-whenever ALLIE's feed-watch job pushes a hot symbol via tools_market_feed.py — a completely
-separate, non-agentic pipeline from this file). This tool just reads what's already there;
-it never triggers a rebuild."""
+read: GET /stocks/thoth/candidates merges ALLIE's pushed feed signals (tools_market_feed.py,
+a completely separate non-agentic pipeline from this file) with axis-tekhen's own always-on
+gap-scanner worker — both sources are already continuously fresh, so this cheap read-time
+merge never needs a separate proactive-refresh job. This tool just reads it; it never
+triggers a rescan."""
 
 import requests
 
@@ -41,9 +42,14 @@ def handle(_name: str, _args: dict) -> str:
             return "No hot candidates on Thoth's board right now."
         lines = []
         for c in candidates[:20]:
-            ticker = c.get("ticker") or c.get("symbol", "?")
-            reason = c.get("reason", "")
-            lines.append(f"- {ticker}: {reason}" if reason else f"- {ticker}")
+            ticker = c.get("ticker", "?")
+            score = c.get("compositeScore")
+            feed_signals = c.get("feedSignals") or []
+            reason = (feed_signals[0].get("reason", "") if feed_signals else "") or ""
+            bits = [f"score {score}"] if score is not None else []
+            if reason:
+                bits.append(reason)
+            lines.append(f"- {ticker}" + (f" ({', '.join(bits)})" if bits else ""))
         return "\n".join(lines)
     except Exception as e:
         return f"Thoth call failed: {e}"
