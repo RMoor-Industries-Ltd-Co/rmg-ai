@@ -1,15 +1,15 @@
 """ALLEN's executive rollup — a scheduled job (allen/scheduler.py) that pulls each PIAAR
-domain agent's already-cached report (Cappo, Anpu, Thoth, Constance) and synthesizes a concise
-executive summary, storing both the raw per-source pulls and the synthesis in agent_reports
-(allen/db.py) so it's instant to read when Rahm asks ALLEN "what's going on" — matching the
-"ready to go" reporting requirement, never live-computed at request time. Each domain agent is
-autonomous and independent; this job only PULLS what they've already produced, it never
-triggers them to do work (matches rmg-piaar-system's reporting law: centralized through ALLIE,
-not peer-to-peer)."""
+domain agent's already-cached report (Cappo, Anpu, Thoth, Constance, Vale) and synthesizes a
+concise executive summary, storing both the raw per-source pulls and the synthesis in
+agent_reports (allen/db.py) so it's instant to read when Rahm asks ALLEN "what's going on" —
+matching the "ready to go" reporting requirement, never live-computed at request time. Each
+domain agent is autonomous and independent; this job only PULLS what they've already
+produced, it never triggers them to do work (matches rmg-piaar-system's reporting law:
+centralized through ALLIE, not peer-to-peer)."""
 
 import logging
 
-from . import db, tools_anpu, tools_cappo, tools_constance, tools_thoth
+from . import db, tools_anpu, tools_cappo, tools_constance, tools_thoth, tools_vale
 from .config import settings
 
 logger = logging.getLogger(__name__)
@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 _SOURCES = [
     ("cappo", lambda: tools_cappo.get_report(), lambda: settings.cappo_report_ready),
     ("constance", lambda: tools_constance.get_report(), lambda: settings.constance_report_ready),
+    ("vale", lambda: tools_vale.get_report(), lambda: settings.vale_report_ready),
     ("anpu", lambda: tools_anpu.handle("anpu_get_reviews", {}), tools_anpu.ready),
     ("thoth", lambda: tools_thoth.handle("thoth_get_status", {}), tools_thoth.ready),
 ]

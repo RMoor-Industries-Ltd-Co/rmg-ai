@@ -80,6 +80,12 @@ class Settings(BaseSettings):
     constance_agent_url: str = "https://api.connectioncircle.app/api/agent"
     constance_agent_key: str = ""
 
+    # Vale — HVN Havenry's public-facing concierge, reachable by ALLIE's delegate_to_vale
+    # (keyed M2M call). Aggregate showroom-activity-only by design — never a specific
+    # visitor's conversation (no visitor identity is ever collected).
+    vale_agent_url: str = "https://hvnhavenry.com/api/agent"
+    vale_agent_key: str = ""
+
     # Google — unified OAuth for Calendar + Gmail + Drive across all accounts.
     google_oauth_client_id: str = ""
     google_oauth_client_secret: str = ""
@@ -131,6 +137,10 @@ class Settings(BaseSettings):
     # delegate_to_constance task endpoint). Aggregate-metrics-only, see privacy note above.
     constance_report_url: str = ""  # e.g. https://api.connectioncircle.app/api/agent/report
 
+    # Vale's cached HVN<->AMG activity report (distinct from vale_agent_url's live
+    # delegate_to_vale task endpoint). Aggregate showroom-activity-only, see privacy note above.
+    vale_report_url: str = ""      # e.g. https://hvnhavenry.com/api/agent/report
+
     @property
     def whatsapp_ready(self) -> bool:
         return bool(
@@ -159,6 +169,10 @@ class Settings(BaseSettings):
     @property
     def constance_ready(self) -> bool:
         return bool(self.constance_agent_url and self.constance_agent_key)
+
+    @property
+    def vale_ready(self) -> bool:
+        return bool(self.vale_agent_url and self.vale_agent_key)
 
     @property
     def calendar_ready(self) -> bool:
@@ -221,6 +235,10 @@ class Settings(BaseSettings):
         return bool(self.constance_report_url and self.constance_agent_key)
 
     @property
+    def vale_report_ready(self) -> bool:
+        return bool(self.vale_report_url and self.vale_agent_key)
+
+    @property
     def agent_rollup_ready(self) -> bool:
         """Whether ALLEN's scheduled executive-rollup job has at least one real domain source
         to pull from — gates the rollup scheduler job the same way feed_watch_ready gates its.
@@ -233,6 +251,7 @@ class Settings(BaseSettings):
                 or self.anpu_reviews_ready
                 or self.thoth_status_ready
                 or self.constance_report_ready
+                or self.vale_report_ready
             )
         )
 
