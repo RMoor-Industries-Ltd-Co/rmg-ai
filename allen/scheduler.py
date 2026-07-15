@@ -45,6 +45,23 @@ def _run_agent_rollup() -> None:
         logger.error("[scheduler] agent rollup failed: %s", exc)
 
 
+def _run_reminders() -> None:
+    from . import db, whatsapp
+
+    try:
+        due = db.list_due_reminders()
+    except Exception as exc:
+        logger.error("[scheduler] reminder poll failed: %s", exc)
+        return
+    for r in due:
+        try:
+            whatsapp.send_message(f"⏰ {r['message']}")
+            db.mark_reminder_sent(r["id"])
+            logger.info("[scheduler] sent reminder %s", r["id"])
+        except Exception as exc:
+            logger.error("[scheduler] failed to send reminder %s: %s", r["id"], exc)
+
+
 def start() -> None:
     """Start the cron scheduler. Each job independently no-ops if its own
     prerequisites aren't configured (WhatsApp for the daily report, Thoth/
@@ -87,6 +104,13 @@ def start() -> None:
         logger.info("[scheduler] agent rollup scheduled every 6 hours")
     else:
         logger.info("[scheduler] agent rollup not configured (needs CAPPO_REPORT_URL, ANPU_REVIEWS_URL, or THOTH_STATUS_URL)")
+
+    if settings.whatsapp_ready and settings.database_url:
+        _scheduler.add_job(_run_reminders, "interval", minutes=5, id="reminders")
+        jobs_added = True
+        logger.info("[scheduler] reminder poll scheduled every 5 minutes")
+    else:
+        logger.info("[scheduler] reminders not configured (needs WhatsApp + DATABASE_URL)")
 
     if not jobs_added:
         _scheduler = None

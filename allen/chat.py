@@ -6,6 +6,7 @@ so ALLEN can answer about the brands, the pipeline, and previous posts."""
 from typing import Optional
 
 from .brands import _PRESETS
+from .clock import now_line
 from .llm import get_llm
 
 
@@ -32,6 +33,7 @@ def build_system(
         "CRITICAL: your reply is spoken ALOUD by ElevenLabs, so write natural SPOKEN language. No markdown, "
         "no bullet points, no numbered lists, no emojis, no headings, no URLs. Short, clear sentences. If you "
         "need to list things, say them in flowing prose. Keep it tight unless asked to go deep." + voice_line
+        + "\n\n" + now_line()
     )
     if context:
         system += (
