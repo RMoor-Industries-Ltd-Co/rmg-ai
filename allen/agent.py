@@ -242,15 +242,6 @@ _GITHUB_NOTE = (
     "but only Claude Code writes it. Write ops are audit-logged.\n"
 )
 
-_VALE_NOTE = (
-    "\n"
-    "VALE (HVN HAVENRY) — delegate_to_vale hands her a live question about HVN's showroom, products, or "
-    "site behavior; vale_get_report pulls her latest cached HVN<->AMG activity status (site faults + "
-    "interaction summary) instantly, without triggering live work. Use her for marketing analysis (what "
-    "visitors are asking about, top products) and to check for reported website faults. She only reasons "
-    "over aggregate showroom data — never a specific visitor's conversation.\n"
-)
-
 _REMINDER_NOTE = (
     "\n"
     "ALERTS & REMINDERS — send_alert pushes a WhatsApp message to Rahm's phone immediately (use sparingly, "
@@ -277,7 +268,6 @@ _FORMS_NOTE = (
 def _build_delegation_note(
     *, clickup_ready: bool, notion_ready: bool, calendar_ready: bool,
     youtube_ready: bool, gdrive_ready: bool, github_ready: bool, reminders_ready: bool = False,
-    vale_ready: bool = False,
 ) -> str:
     """Every section here describes a real, currently-attached tool — nothing is claimed
     that isn't actually in this turn's tool list. A prior version described every
@@ -300,8 +290,6 @@ def _build_delegation_note(
         note += _DRIVE_NOTE
     if github_ready:
         note += _GITHUB_NOTE
-    if vale_ready:
-        note += _VALE_NOTE
     if reminders_ready:
         note += _REMINDER_NOTE
     note += _FORMS_NOTE
@@ -322,7 +310,6 @@ def respond_agentic(
         tools_gdrive,
         tools_github,
         tools_notion,
-        tools_vale,
         tools_web,
         tools_youtube,
     )
@@ -331,7 +318,6 @@ def respond_agentic(
     calendar_ready = tools_calendar.ready()
     youtube_ready = tools_youtube.ready()
     gdrive_ready = tools_gdrive.ready()
-    vale_ready = tools_vale.ready()
 
     tools = list(ALLEN_TOOLS)
     if settings.whatsapp_ready and settings.database_url:
@@ -349,10 +335,6 @@ def respond_agentic(
         tools += tools_gdrive.TOOLS  # Drive read + CRUD (TOOLS already includes WRITE_TOOLS)
     if settings.github_ready:
         tools += tools_github.TOOLS + tools_github.WRITE_TOOLS  # allen-piaar-control-bot — PIAAR org visibility
-    if vale_ready:
-        tools += tools_vale.TOOLS  # ask Vale (HVN Havenry) directly — marketing/site-fault questions
-    if settings.vale_report_ready:
-        tools += tools_vale.REPORT_TOOLS  # pull her cached HVN<->AMG activity report
 
     forms.ensure_seed_forms(namespace)
     tools += forms.build_tool_schemas(namespace) + forms.META_TOOLS
@@ -362,7 +344,6 @@ def respond_agentic(
         calendar_ready=calendar_ready, youtube_ready=youtube_ready,
         gdrive_ready=gdrive_ready, github_ready=settings.github_ready,
         reminders_ready=bool(settings.whatsapp_ready and settings.database_url),
-        vale_ready=vale_ready,
     )
     system = chat.build_system(None, None, context) + delegation_note
     messages = [{"role": "user", "content": chat.build_user(message, history)}]
@@ -413,12 +394,6 @@ def respond_agentic(
             if name in tools_github.WRITE_NAMES:
                 db.add_audit(namespace, "allen", name, json.dumps(inp), res)
             return res
-        if name == "delegate_to_vale":
-            res = tools_vale.handle(inp.get("task", ""))
-            db.add_audit(namespace, "allen", "delegate_to_vale", inp.get("task", ""), res)
-            return res
-        if name == "vale_get_report":
-            return tools_vale.get_report()
         if name == "list_virtual_forms":
             return forms.list_forms_summary(namespace)
         if name == "define_virtual_form":

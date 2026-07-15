@@ -87,7 +87,9 @@ def run(task: str, namespace: str) -> str:
     if settings.cappo_report_ready:
         tools += tools_cappo.REPORT_TOOLS  # pull his cached report (separate URL from delegation)
     if tools_constance.ready():
-        tools += tools_constance.TOOLS  # delegate to Constance (Connection Circle), or pull her cached report
+        tools += tools_constance.TOOLS  # delegate a Connection Circle task to Constance
+    if settings.constance_report_ready:
+        tools += tools_constance.REPORT_TOOLS  # pull her cached executive status report
     if tools_vale.ready():
         tools += tools_vale.TOOLS  # delegate HVN showroom questions to Vale
     if settings.vale_report_ready:

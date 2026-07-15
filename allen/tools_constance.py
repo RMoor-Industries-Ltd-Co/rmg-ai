@@ -32,6 +32,14 @@ TOOLS = [
             "required": ["task"],
         },
     },
+]
+
+# Separate from TOOLS: constance_get_report needs its own CONSTANCE_REPORT_URL configured
+# (independent of delegate_to_constance's CONSTANCE_AGENT_URL). Gate this on
+# settings.constance_report_ready specifically — not just tools_constance.ready() — so it's
+# never advertised (and silently no-op'd) before it's wired up. Mirrors tools_cappo.py/
+# tools_vale.py's TOOLS/REPORT_TOOLS split.
+REPORT_TOOLS = [
     {
         "name": "constance_get_report",
         "description": (
