@@ -1,5 +1,5 @@
 """Vale — HVN Havenry's public-facing concierge (rmg-piaar-system contract:
-governance/brands/ai-universe/VALE.md). ALLIE hands Vale an HVN/showroom question DOWN
+contracts/24-vale-hvn-concierge.md). ALLIE hands Vale an HVN/showroom question DOWN
 via a keyed server-to-server call, or pulls her cached HVN<->AMG activity report.
 Chain: ALLEN -> ALLIE -> Vale.
 

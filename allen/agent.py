@@ -304,7 +304,15 @@ def respond_agentic(
     max_tokens: int = 900,
     model: Optional[str] = None,
 ) -> str:
-    from . import tools_calendar, tools_clickup, tools_gdrive, tools_github, tools_notion, tools_web, tools_youtube
+    from . import (
+        tools_calendar,
+        tools_clickup,
+        tools_gdrive,
+        tools_github,
+        tools_notion,
+        tools_web,
+        tools_youtube,
+    )
     from .config import settings
 
     calendar_ready = tools_calendar.ready()
