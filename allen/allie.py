@@ -63,7 +63,17 @@ def run(task: str, namespace: str) -> str:
     """Delegation entrypoint — ALLEN hands ALLIE a task. She works it AGENTICALLY: pulling live data
     from ClickUp (projects) and Notion (knowledge base) before answering, scoped to the business
     spaces, then returns organized findings for ALLEN to synthesize."""
-    from . import tools_anpu, tools_cappo, tools_clickup, tools_constance, tools_gdrive, tools_notion, tools_thoth, tools_youtube
+    from . import (
+        tools_anpu,
+        tools_cappo,
+        tools_clickup,
+        tools_constance,
+        tools_gdrive,
+        tools_notion,
+        tools_thoth,
+        tools_vale,
+        tools_youtube,
+    )
     from .config import settings
 
     context = memory.allie_context(namespace)
@@ -78,6 +88,10 @@ def run(task: str, namespace: str) -> str:
         tools += tools_cappo.REPORT_TOOLS  # pull his cached report (separate URL from delegation)
     if tools_constance.ready():
         tools += tools_constance.TOOLS  # delegate to Constance (Connection Circle), or pull her cached report
+    if tools_vale.ready():
+        tools += tools_vale.TOOLS  # delegate HVN showroom questions to Vale
+    if settings.vale_report_ready:
+        tools += tools_vale.REPORT_TOOLS  # pull her cached HVN<->AMG activity report
     if tools_anpu.ready():
         tools += tools_anpu.TOOLS  # pull AXIS/Anpu's already-cached oversight reviews
     if tools_thoth.ready():
@@ -105,6 +119,9 @@ def run(task: str, namespace: str) -> str:
         "• CONNECTION CIRCLE: for anything about Connection Circle, DELEGATE to Constance via "
         "delegate_to_constance, or pull constance_get_report for her latest status. She only reasons over "
         "aggregate product metrics — never ask her about a specific user's private relationship data.\n"
+        "• HVN HAVENRY: for anything about HVN's showroom or products, DELEGATE to Vale via delegate_to_vale, "
+        "or pull vale_get_report for her latest HVN<->AMG activity status. She only reasons over aggregate "
+        "showroom interaction data and the product catalog — never a specific visitor's conversation.\n"
         "• YouTube INGEST: youtube_ingest(url) downloads audio (MP3), transcript (plain text), and optionally "
         "video (MP4) from any YouTube URL and saves the files to Google Drive (rahm@rmasters.group). Use this "
         "when sourcing research material, b-roll references, or script inspiration from YouTube. Set "
@@ -144,6 +161,12 @@ def run(task: str, namespace: str) -> str:
             return res
         if name == "constance_get_report":
             return tools_constance.get_report()
+        if name == "delegate_to_vale":
+            res = tools_vale.handle(inp.get("task", ""))
+            db.add_audit(namespace, "allie", "delegate_to_vale", inp.get("task", ""), res)
+            return res
+        if name == "vale_get_report":
+            return tools_vale.get_report()
         if name == "anpu_get_reviews":
             return tools_anpu.handle(name, inp)
         if name == "thoth_get_status":
