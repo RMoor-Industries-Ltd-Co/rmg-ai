@@ -1,5 +1,5 @@
 """Constance — Connection Circle's project-owner agent (rmg-piaar-system contract:
-governance/brands/ai-universe/CONSTANCE.md). ALLIE hands Constance a Connection Circle
+contracts/23-constance-project-owner.md). ALLIE hands Constance a Connection Circle
 task DOWN via a keyed server-to-server call, or pulls her cached executive status.
 Chain: ALLEN → ALLIE → Constance.
 
