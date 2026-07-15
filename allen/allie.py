@@ -8,6 +8,7 @@ import json
 from typing import Optional
 
 from . import db, memory
+from .clock import now_line
 from .llm import get_llm
 
 _SYSTEM = (
@@ -31,7 +32,7 @@ _SYSTEM = (
 
 
 def _build_system(context: Optional[str]) -> str:
-    system = _SYSTEM
+    system = _SYSTEM + "\n\n" + now_line()
     if context:
         system += (
             "\n\nWHAT YOU KNOW (ALLEN's business knowledge — RMG, RMI, brands, projects; treat as ground "

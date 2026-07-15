@@ -23,6 +23,37 @@ def _format_audit(rows: list) -> str:
     return "\n".join(lines)
 
 
+def _send_alert(namespace: str, message: str) -> str:
+    from . import whatsapp
+
+    if not message.strip():
+        return "No message given to send."
+    whatsapp.send_message(f"🔔 {message}")
+    db.add_audit(namespace, "allen", "send_alert", message, "sent")
+    return "Sent."
+
+
+def _schedule_reminder(namespace: str, message: str, due_at: str) -> str:
+    from datetime import datetime
+
+    if not message.strip():
+        return "No reminder message given."
+    try:
+        due = datetime.fromisoformat(due_at.strip())
+    except ValueError:
+        return f"Couldn't parse due_at '{due_at}' as an ISO 8601 datetime — try again with an explicit offset."
+    row = db.create_reminder(namespace, message, due)
+    db.add_audit(namespace, "allen", "schedule_reminder", f"{message} @ {due_at}", row["id"])
+    return f"Reminder scheduled for {due_at} (id {row['id']})."
+
+
+def _format_reminders(rows: list) -> str:
+    if not rows:
+        return "No pending reminders."
+    lines = [f"- [{r['id']}] {r['due_at']}: {r['message']}" for r in rows]
+    return "\n".join(lines)
+
+
 def _format_agent_rollup(rows: list) -> str:
     if not rows:
         return "No agent rollup has been generated yet — no PIAAR domain sources are configured."
@@ -79,6 +110,55 @@ ALLEN_TOOLS = [
             "don't delegate to ALLIE just to check on things that are already cached here."
         ),
         "input_schema": {"type": "object", "properties": {}},
+    },
+]
+
+# Gated on settings.whatsapp_ready and settings.database_url (see respond_agentic) rather
+# than always advertised — reminders need both outbound delivery and persistence, and a
+# tool ALLEN can call but that silently fails is worse than one he doesn't have.
+REMINDER_TOOLS = [
+    {
+        "name": "send_alert",
+        "description": (
+            "Push a WhatsApp message to Rahm's phone RIGHT NOW — for something urgent or worth flagging "
+            "the moment you notice it, not on the daily briefing schedule. Use sparingly; this interrupts him."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"message": {"type": "string", "description": "The alert text to send."}},
+            "required": ["message"],
+        },
+    },
+    {
+        "name": "schedule_reminder",
+        "description": (
+            "Schedule a WhatsApp reminder for later — Rahm asking 'remind me to X at/in Y' or "
+            "'text me about this tomorrow morning'. Compute due_at as an absolute ISO 8601 datetime "
+            "(e.g. 2026-07-15T15:00:00-04:00) from the CURRENT DATE/TIME in your context plus what Rahm "
+            "asked for — never guess at the current date, always derive it from that line."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "message": {"type": "string", "description": "What to remind Rahm about."},
+                "due_at": {"type": "string", "description": "Absolute ISO 8601 datetime to send the reminder."},
+            },
+            "required": ["message", "due_at"],
+        },
+    },
+    {
+        "name": "list_reminders",
+        "description": "List Rahm's pending (not-yet-sent) scheduled reminders.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "cancel_reminder",
+        "description": "Cancel a pending reminder by its id (from list_reminders).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"reminder_id": {"type": "string"}},
+            "required": ["reminder_id"],
+        },
     },
 ]
 
@@ -162,6 +242,16 @@ _GITHUB_NOTE = (
     "but only Claude Code writes it. Write ops are audit-logged.\n"
 )
 
+_REMINDER_NOTE = (
+    "\n"
+    "ALERTS & REMINDERS — send_alert pushes a WhatsApp message to Rahm's phone immediately (use sparingly, "
+    "only for something worth interrupting him for). schedule_reminder sends one later — compute due_at from "
+    "the CURRENT DATE/TIME given in your context, never guess it. list_reminders/cancel_reminder manage what's "
+    "pending. This is DIFFERENT from the submit_form_personal_reminder form below, which just files a note in "
+    "memory — use these tools instead whenever Rahm actually wants to be notified/texted, not just reminded "
+    "the next time he asks you.\n"
+)
+
 _FORMS_NOTE = (
     "\n"
     "VIRTUAL FORMS — for structured personal/project/business requests (schedule an appointment, open a "
@@ -177,7 +267,7 @@ _FORMS_NOTE = (
 
 def _build_delegation_note(
     *, clickup_ready: bool, notion_ready: bool, calendar_ready: bool,
-    youtube_ready: bool, gdrive_ready: bool, github_ready: bool,
+    youtube_ready: bool, gdrive_ready: bool, github_ready: bool, reminders_ready: bool = False,
 ) -> str:
     """Every section here describes a real, currently-attached tool — nothing is claimed
     that isn't actually in this turn's tool list. A prior version described every
@@ -200,6 +290,8 @@ def _build_delegation_note(
         note += _DRIVE_NOTE
     if github_ready:
         note += _GITHUB_NOTE
+    if reminders_ready:
+        note += _REMINDER_NOTE
     note += _FORMS_NOTE
     return note
 
@@ -220,6 +312,8 @@ def respond_agentic(
     gdrive_ready = tools_gdrive.ready()
 
     tools = list(ALLEN_TOOLS)
+    if settings.whatsapp_ready and settings.database_url:
+        tools += REMINDER_TOOLS  # push alerts + scheduled WhatsApp reminders
     if settings.clickup_ready:
         tools += tools_clickup.TOOLS + tools_clickup.WRITE_TOOLS  # full CRUD on Rahm's PERSONAL spaces
     if settings.notion_ready:
@@ -241,6 +335,7 @@ def respond_agentic(
         clickup_ready=settings.clickup_ready, notion_ready=settings.notion_ready,
         calendar_ready=calendar_ready, youtube_ready=youtube_ready,
         gdrive_ready=gdrive_ready, github_ready=settings.github_ready,
+        reminders_ready=bool(settings.whatsapp_ready and settings.database_url),
     )
     system = chat.build_system(None, None, context) + delegation_note
     messages = [{"role": "user", "content": chat.build_user(message, history)}]
@@ -256,6 +351,15 @@ def respond_agentic(
             return _format_audit(db.list_audit(namespace, inp.get("limit", 20)))
         if name == "get_agent_rollup":
             return _format_agent_rollup(db.list_agent_reports())
+        if name == "send_alert":
+            return _send_alert(namespace, inp.get("message", ""))
+        if name == "schedule_reminder":
+            return _schedule_reminder(namespace, inp.get("message", ""), inp.get("due_at", ""))
+        if name == "list_reminders":
+            return _format_reminders(db.list_upcoming_reminders(namespace))
+        if name == "cancel_reminder":
+            ok = db.cancel_reminder(namespace, inp.get("reminder_id", ""))
+            return "Cancelled." if ok else "No pending reminder with that id."
         if name.startswith("clickup_"):
             res = tools_clickup.handle(name, inp, scope="personal")  # ALLEN direct = personal systems only
             if name in tools_clickup.WRITE_NAMES:

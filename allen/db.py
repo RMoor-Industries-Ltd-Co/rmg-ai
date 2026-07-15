@@ -196,6 +196,20 @@ def init_db() -> None:
                 fetched_at timestamptz DEFAULT now()
             );
             CREATE UNIQUE INDEX IF NOT EXISTS agent_reports_source_idx ON agent_reports (source);
+
+            -- ALLEN-triggered outbound WhatsApp reminders (allen/reminders.py). ALLEN sets
+            -- these himself mid-conversation (schedule_reminder tool); scheduler.py's
+            -- reminder job polls for due, unsent rows every few minutes and sends them via
+            -- whatsapp.send_message. Distinct from the fixed daily briefing/report jobs.
+            CREATE TABLE IF NOT EXISTS reminders (
+                id text PRIMARY KEY,
+                namespace text NOT NULL,
+                message text NOT NULL,
+                due_at timestamptz NOT NULL,
+                sent boolean NOT NULL DEFAULT false,
+                created_at timestamptz DEFAULT now()
+            );
+            CREATE INDEX IF NOT EXISTS reminders_due_idx ON reminders (due_at) WHERE NOT sent;
             """
         )
 
@@ -760,3 +774,53 @@ def set_agent_report(source: str, report_text: str, ok: bool = True) -> dict:
             (rid, source, report_text, ok),
         )
         return cur.fetchone()
+
+
+def create_reminder(namespace: str, message: str, due_at) -> dict:
+    rid = f"remind-{int(time.time() * 1000)}-{secrets.randbelow(100000)}"
+    with _cursor() as cur:
+        cur.execute(
+            "INSERT INTO reminders (id, namespace, message, due_at) VALUES (%s, %s, %s, %s) "
+            "RETURNING id, namespace, message, due_at, sent, created_at",
+            (rid, namespace, message, due_at),
+        )
+        return cur.fetchone()
+
+
+def list_due_reminders() -> list[dict]:
+    """Unsent reminders whose due_at has passed — polled by scheduler.py's reminder job."""
+    if not db_ready():
+        return []
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT id, namespace, message, due_at FROM reminders "
+            "WHERE NOT sent AND due_at <= now() ORDER BY due_at"
+        )
+        return list(cur.fetchall())
+
+
+def mark_reminder_sent(reminder_id: str) -> None:
+    with _cursor() as cur:
+        cur.execute("UPDATE reminders SET sent = true WHERE id = %s", (reminder_id,))
+
+
+def list_upcoming_reminders(namespace: str, limit: int = 20) -> list[dict]:
+    """Pending reminders not yet due/sent — lets ALLEN answer 'what have I got scheduled'."""
+    if not db_ready():
+        return []
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT id, message, due_at FROM reminders "
+            "WHERE namespace = %s AND NOT sent ORDER BY due_at LIMIT %s",
+            (namespace, limit),
+        )
+        return list(cur.fetchall())
+
+
+def cancel_reminder(namespace: str, reminder_id: str) -> bool:
+    with _cursor() as cur:
+        cur.execute(
+            "DELETE FROM reminders WHERE id = %s AND namespace = %s AND NOT sent",
+            (reminder_id, namespace),
+        )
+        return cur.rowcount > 0
