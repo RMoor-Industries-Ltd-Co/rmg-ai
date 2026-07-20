@@ -97,6 +97,11 @@ take effect after a container restart.
 All runtime secrets are managed in **Doppler** (`rmg-ai` project) and injected at
 container start via `doppler run --`. The authoritative variable list is in `.env.example`.
 
+`ANTHROPIC_API_KEY` is rmg-ai's own dedicated key — the `ALLEN` workspace/key in the
+"RMoor Industries Ltd Co." Anthropic Console org (login `rahmind.consulting@rmoorind.com`).
+Not shared with any other PIAAR repo, and distinct from Rahm's personal Claude.ai Max plan
+login. See `rmg-piaar-system/CLAUDE.md` for the full per-project key mapping.
+
 Never paste real secret values into chat or any committed file.
 
 ## Key modules
