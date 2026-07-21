@@ -268,6 +268,7 @@ _FORMS_NOTE = (
 def _build_delegation_note(
     *, clickup_ready: bool, notion_ready: bool, calendar_ready: bool,
     youtube_ready: bool, gdrive_ready: bool, github_ready: bool, reminders_ready: bool = False,
+    forms_ready: bool = True,
 ) -> str:
     """Every section here describes a real, currently-attached tool — nothing is claimed
     that isn't actually in this turn's tool list. A prior version described every
@@ -292,7 +293,8 @@ def _build_delegation_note(
         note += _GITHUB_NOTE
     if reminders_ready:
         note += _REMINDER_NOTE
-    note += _FORMS_NOTE
+    if forms_ready:
+        note += _FORMS_NOTE
     return note
 
 
@@ -303,6 +305,7 @@ def respond_agentic(
     namespace: str,
     max_tokens: int = 900,
     model: Optional[str] = None,
+    tool_scope: Optional[set[str]] = None,
 ) -> str:
     from . import (
         tools_calendar,
@@ -315,35 +318,55 @@ def respond_agentic(
     )
     from .config import settings
 
-    calendar_ready = tools_calendar.ready()
-    youtube_ready = tools_youtube.ready()
-    gdrive_ready = tools_gdrive.ready()
+    # tool_scope=None → full interactive tool set (unchanged). A scoped call (e.g. the
+    # scheduled morning brief) attaches only the named categories, so a background job
+    # doesn't pay to send the full GitHub/Drive/YouTube/forms schemas it never uses. The
+    # delegation note is built from the SAME effective flags, preserving the invariant that
+    # it only describes tools actually attached this turn.
+    full = tool_scope is None
+
+    def want(cat: str) -> bool:
+        return full or cat in tool_scope
+
+    calendar_on = tools_calendar.ready() and want("calendar")
+    youtube_on = tools_youtube.ready() and want("youtube")
+    gdrive_on = tools_gdrive.ready() and want("gdrive")
+    clickup_on = settings.clickup_ready and want("clickup")
+    notion_on = settings.notion_ready and want("notion")
+    github_on = settings.github_ready and want("github")
+    reminders_on = bool(settings.whatsapp_ready and settings.database_url) and want("reminders")
+    web_on = want("web")
+    forms_on = want("forms")
 
     tools = list(ALLEN_TOOLS)
-    if settings.whatsapp_ready and settings.database_url:
+    if reminders_on:
         tools += REMINDER_TOOLS  # push alerts + scheduled WhatsApp reminders
-    if settings.clickup_ready:
-        tools += tools_clickup.TOOLS + tools_clickup.WRITE_TOOLS  # full CRUD on Rahm's PERSONAL spaces
-    if settings.notion_ready:
+    if clickup_on:
+        tools += tools_clickup.TOOLS  # read tools always; writes only on full (interactive) calls
+        if full:
+            tools += tools_clickup.WRITE_TOOLS  # full CRUD on Rahm's PERSONAL spaces
+    if notion_on:
         tools += tools_notion.TOOLS
-    if calendar_ready:
+    if calendar_on:
         tools += tools_calendar.TOOLS  # ALLEN manages Rahm's personal calendar
-    tools += tools_web.TOOLS  # web fetch always available
-    if youtube_ready:
+    if web_on:
+        tools += tools_web.TOOLS  # web fetch (full interactive set)
+    if youtube_on:
         tools += tools_youtube.TOOLS  # YouTube ingest → Drive
-    if gdrive_ready:
+    if gdrive_on:
         tools += tools_gdrive.TOOLS  # Drive read + CRUD (TOOLS already includes WRITE_TOOLS)
-    if settings.github_ready:
+    if github_on:
         tools += tools_github.TOOLS + tools_github.WRITE_TOOLS  # allen-piaar-control-bot — PIAAR org visibility
 
-    forms.ensure_seed_forms(namespace)
-    tools += forms.build_tool_schemas(namespace) + forms.META_TOOLS
+    if forms_on:
+        forms.ensure_seed_forms(namespace)
+        tools += forms.build_tool_schemas(namespace) + forms.META_TOOLS
 
     delegation_note = _build_delegation_note(
-        clickup_ready=settings.clickup_ready, notion_ready=settings.notion_ready,
-        calendar_ready=calendar_ready, youtube_ready=youtube_ready,
-        gdrive_ready=gdrive_ready, github_ready=settings.github_ready,
-        reminders_ready=bool(settings.whatsapp_ready and settings.database_url),
+        clickup_ready=clickup_on, notion_ready=notion_on,
+        calendar_ready=calendar_on, youtube_ready=youtube_on,
+        gdrive_ready=gdrive_on, github_ready=github_on,
+        reminders_ready=reminders_on, forms_ready=forms_on,
     )
     system = chat.build_system(None, None, context) + delegation_note
     messages = [{"role": "user", "content": chat.build_user(message, history)}]

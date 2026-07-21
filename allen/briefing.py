@@ -98,6 +98,10 @@ def build_daily_briefing() -> str:
             "tasks, or dates.",
             namespace="atelier",
             max_tokens=4000,
+            # Scheduled job: attach only the read tools the brief actually uses (calendar,
+            # ClickUp, Notion). Skips the GitHub/Drive/YouTube/web/forms/reminder schemas —
+            # a large uncached-token payload the brief never calls.
+            tool_scope={"calendar", "clickup", "notion"},
         )
     except Exception as exc:
         logger.error("[briefing] generation failed: %s", exc)
