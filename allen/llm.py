@@ -73,10 +73,11 @@ class ClaudeProvider:
         self, system: str, user: str, max_tokens: int = 2000,
         *, project: str = "rmg-ai", namespace: str = "", feature: str = "chat",
     ) -> str:
+        sys_blocks, _ = _cache_prefix(system, None)
         msg = self._client.messages.create(
             model=self.model,
             max_tokens=max_tokens,
-            system=system,
+            system=sys_blocks,
             messages=[{"role": "user", "content": user}],
         )
         self._log_usage(msg, project, namespace, feature)
@@ -88,10 +89,11 @@ class ClaudeProvider:
     ) -> str:
         """Multimodal turn — `content` is a list of Anthropic content blocks (text + image +
         document), so ALLEN can SEE images/PDFs/video frames, not just read text about them."""
+        sys_blocks, _ = _cache_prefix(system, None)
         msg = self._client.messages.create(
             model=self.model,
             max_tokens=max_tokens,
-            system=system,
+            system=sys_blocks,
             messages=[{"role": "user", "content": content}],
         )
         self._log_usage(msg, project, namespace, feature)
