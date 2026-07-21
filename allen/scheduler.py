@@ -12,17 +12,17 @@ _scheduler: BackgroundScheduler | None = None
 
 
 def _send_report() -> None:
-    from . import briefing, report, whatsapp
+    from . import briefing, whatsapp
 
-    logger.info("[scheduler] firing daily briefing + report")
+    # One agentic generation now produces the full morning brief (rich personal briefing +
+    # per-lane business rundown), replacing the old two-loop briefing+report pipeline that
+    # re-queried overlapping ClickUp/calendar data twice. whatsapp.send_message chunks the
+    # result across WhatsApp's 4096-char limit automatically.
+    logger.info("[scheduler] firing daily morning brief")
     try:
         whatsapp.send_message(briefing.build_daily_briefing())
     except Exception as exc:
-        logger.error("[scheduler] daily briefing failed: %s", exc)
-    try:
-        whatsapp.send_message(report.build_daily_report())
-    except Exception as exc:
-        logger.error("[scheduler] daily report failed: %s", exc)
+        logger.error("[scheduler] daily morning brief failed: %s", exc)
 
 
 def _run_feed_watch() -> None:

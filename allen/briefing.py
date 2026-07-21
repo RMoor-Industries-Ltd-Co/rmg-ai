@@ -1,8 +1,15 @@
 """Rich morning briefing — weather, calendar, ClickUp deadline audit, ranked priorities,
-news, and a motivational close, sent via WhatsApp alongside (not instead of) the existing
-business-lane daily report in report.py. Weather and news are fetched deterministically in
-Python (weather.py / news.py) and handed to the model as given facts — ALLEN's own tools
-can't reliably produce either (no weather tool; web_fetch strips links news needs)."""
+the per-lane business rundown, news, and a motivational close, produced in ONE agentic
+generation and sent via WhatsApp. Weather and news are fetched deterministically in Python
+(weather.py / news.py) and handed to the model as given facts — ALLEN's own tools can't
+reliably produce either (no weather tool; web_fetch strips links news needs).
+
+This single generation replaces the old two-call morning pipeline (this briefing + report.py's
+separate business-lane report): both loops independently re-queried overlapping ClickUp/calendar
+data and each ran a full agentic loop. The business lanes are now folded in as their own section
+below, so one set of tool pulls feeds the whole brief. `whatsapp.send_message` chunks the result
+across WhatsApp's 4096-char limit automatically, so length isn't a constraint. report.py is left
+in place but is no longer wired into the scheduler."""
 
 import logging
 from datetime import datetime
@@ -36,6 +43,18 @@ Pull real open tasks. Report:
 new due date with one-line reasoning.
 End this section with: "I haven't changed anything in ClickUp — these are yours to confirm."
 If ClickUp isn't reachable, say so plainly instead of inventing tasks.
+
+## 🏢 Business lanes
+Reuse the ClickUp and calendar data you already pulled above (don't re-query the same \
+lists) and add Notion where a lane needs it. Give 1-3 tight bullets per lane, in this exact \
+order, and write exactly "Nothing flagged." for any lane with nothing real to report:
+- **RMI** — RMoor Industries Ltd Co: open tasks, anything due/overdue, active priorities
+- **RMG** — RMG / Master Atelier / Creator OS: content pipeline, production status, blockers
+- **PIAAR** — current projects and priorities
+- **HVN** — HVN Haven: status and open items
+- **PLP** — current projects and priorities
+- **AMG** — Apex Meridian Group: operational status, open items
+(Rahm's personal lane is already covered by the calendar, ClickUp, and Top-5 sections above.)
 
 ## 🎯 Top 5 for today (ranked)
 Exactly 5 items (fewer only if there's genuinely not enough real material), ranked by \
@@ -73,10 +92,12 @@ def build_daily_briefing() -> str:
         return agent.respond_agentic(
             message=prompt,
             history=[],
-            context="Generating the rich personal morning briefing. Be concrete and data-driven — "
-            "pull real calendar and ClickUp data via your tools; never invent events, tasks, or dates.",
+            context="Generating Rahm's full morning brief (personal briefing + per-lane business "
+            "rundown) in a single pass. Be concrete and data-driven — pull real calendar/ClickUp/"
+            "Notion data ONCE via your tools and reuse it across sections; never invent events, "
+            "tasks, or dates.",
             namespace="atelier",
-            max_tokens=3000,
+            max_tokens=4000,
         )
     except Exception as exc:
         logger.error("[briefing] generation failed: %s", exc)
