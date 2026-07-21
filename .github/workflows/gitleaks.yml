@@ -1,0 +1,20 @@
+# Secret-scanning safety net — runs gitleaks on every push and PR so a secret
+# committed without the local pre-commit hook is still caught in CI.
+# Policy: governance/policies/secrets-protection.md
+name: gitleaks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history so the diff scan is complete
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_CONFIG: .gitleaks.toml
