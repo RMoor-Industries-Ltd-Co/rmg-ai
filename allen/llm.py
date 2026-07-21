@@ -8,6 +8,38 @@ from .config import settings
 
 logger = logging.getLogger(__name__)
 
+_CACHE_CONTROL = {"type": "ephemeral"}
+
+
+def _cache_prefix(system, tools):
+    """Return (system, tools) with a prompt-cache breakpoint on the stable prefix.
+
+    The tool schemas + system prompt are byte-identical across the many calls in the daily
+    brief and WhatsApp loops, so caching that prefix cuts repeated input-token cost by ~90%.
+    Breakpoints cascade in the API's fixed order (tools → system → messages): marking the last
+    tool caches the whole tool array; marking the last system block extends the cached prefix
+    through the system prompt. Volatile content (the user turn, tool results) stays after the
+    breakpoint and never invalidates the cache. Below the model's minimum cacheable length the
+    API simply ignores the marker — so this is always safe to leave on.
+
+    Copies are shallow and local; the shared ALLEN_TOOLS list is never mutated.
+    """
+    if not settings.prompt_cache_enabled:
+        return system, tools
+
+    sys_blocks = system
+    if isinstance(system, str) and system:
+        sys_blocks = [{"type": "text", "text": system, "cache_control": _CACHE_CONTROL}]
+
+    cached_tools = tools
+    if tools:
+        cached_tools = list(tools)
+        last = dict(cached_tools[-1])
+        last["cache_control"] = _CACHE_CONTROL
+        cached_tools[-1] = last
+
+    return sys_blocks, cached_tools
+
 
 class LLMProvider(Protocol):
     def complete(self, system: str, user: str, max_tokens: int = 2000) -> str: ...
@@ -31,6 +63,8 @@ class ClaudeProvider:
                 usage.log_llm(
                     u.input_tokens, u.output_tokens, self.model,
                     project=project or "rmg-ai", namespace=namespace or "", feature=feature or "chat",
+                    cache_creation_input_tokens=getattr(u, "cache_creation_input_tokens", 0) or 0,
+                    cache_read_input_tokens=getattr(u, "cache_read_input_tokens", 0) or 0,
                 )
         except Exception:
             pass  # usage tracking must never break the actual response
@@ -39,10 +73,11 @@ class ClaudeProvider:
         self, system: str, user: str, max_tokens: int = 2000,
         *, project: str = "rmg-ai", namespace: str = "", feature: str = "chat",
     ) -> str:
+        sys_blocks, _ = _cache_prefix(system, None)
         msg = self._client.messages.create(
             model=self.model,
             max_tokens=max_tokens,
-            system=system,
+            system=sys_blocks,
             messages=[{"role": "user", "content": user}],
         )
         self._log_usage(msg, project, namespace, feature)
@@ -54,10 +89,11 @@ class ClaudeProvider:
     ) -> str:
         """Multimodal turn — `content` is a list of Anthropic content blocks (text + image +
         document), so ALLEN can SEE images/PDFs/video frames, not just read text about them."""
+        sys_blocks, _ = _cache_prefix(system, None)
         msg = self._client.messages.create(
             model=self.model,
             max_tokens=max_tokens,
-            system=system,
+            system=sys_blocks,
             messages=[{"role": "user", "content": content}],
         )
         self._log_usage(msg, project, namespace, feature)
@@ -72,6 +108,7 @@ class ClaudeProvider:
         stops calling tools (this is how ALLEN delegates to ALLIE, and ALLIE calls ClickUp/Notion)."""
         msgs = list(messages)
         last_text = ""
+        system, tools = _cache_prefix(system, tools)
         for _ in range(max_rounds):
             resp = self._client.messages.create(
                 model=self.model, max_tokens=max_tokens, system=system, messages=msgs, tools=tools,
