@@ -18,7 +18,14 @@ class Settings(BaseSettings):
 
     # LLM
     anthropic_api_key: str = ""
-    anthropic_model: str = "claude-sonnet-4-6"  # override via env; pick per-message in the console
+    # Default model for all lanes (scheduled jobs + interactive chat). Sonnet 5 at high
+    # effort handles the mechanical scheduled work (briefing/report/rollup) at near-Opus
+    # quality for a fraction of Opus per-token cost; Rahm can still escalate a single
+    # interactive message to Opus via the console's per-message model selector.
+    anthropic_model: str = "claude-sonnet-5"  # override via env; pick per-message in the console
+    # Reasoning-effort hint (low|medium|high|xhigh|max), sent as output_config.effort.
+    # Blank disables the hint entirely. Degrades gracefully if the model/SDK rejects it.
+    anthropic_effort: str = "high"
 
     # Attachments — multi-file staging
     max_attach_files: int = 5        # max files per chat turn

@@ -21,6 +21,46 @@ class ClaudeProvider:
 
         self._client = Anthropic(api_key=settings.anthropic_api_key)
         self.model = settings.anthropic_model
+        self.effort = (settings.anthropic_effort or "").strip()
+
+    @staticmethod
+    def _cached_system(system: str) -> list:
+        """Wrap the system prompt as a cache-marked text block so the (large, mostly-static)
+        system + tool prefix is written once and read from cache on later rounds/requests
+        instead of re-billed in full. Below the model's min cacheable prefix it silently
+        no-ops — no extra charge — so this is safe on small prompts too."""
+        return [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+
+    @staticmethod
+    def _cached_tools(tools: list) -> list:
+        """Copy the tool list and mark the LAST tool for caching, so the whole tool payload
+        (rendered before `system`) caches as one prefix. Copies rather than mutating the
+        shared module-level TOOLS lists so the cache marker never leaks between call sites."""
+        if not tools:
+            return tools
+        out = list(tools)
+        last = dict(out[-1])
+        last["cache_control"] = {"type": "ephemeral"}
+        out[-1] = last
+        return out
+
+    def _create(self, **kwargs):
+        """messages.create with the effort hint attached. If the running SDK or the target
+        model doesn't accept output_config/effort, retry once without it rather than failing —
+        keeps ALLEN responsive across SDK/model versions."""
+        if self.effort:
+            try:
+                return self._client.messages.create(
+                    output_config={"effort": self.effort}, **kwargs
+                )
+            except TypeError:
+                pass  # SDK predates output_config kwarg
+            except Exception as exc:  # model rejected effort (400) — fall back, else re-raise
+                msg = str(exc).lower()
+                if "output_config" not in msg and "effort" not in msg:
+                    raise
+                logger.warning("effort hint unsupported for %s, retrying without: %s", self.model, exc)
+        return self._client.messages.create(**kwargs)
 
     def _log_usage(self, resp, project: str, namespace: str, feature: str) -> None:
         try:
@@ -39,10 +79,10 @@ class ClaudeProvider:
         self, system: str, user: str, max_tokens: int = 2000,
         *, project: str = "rmg-ai", namespace: str = "", feature: str = "chat",
     ) -> str:
-        msg = self._client.messages.create(
+        msg = self._create(
             model=self.model,
             max_tokens=max_tokens,
-            system=system,
+            system=self._cached_system(system),
             messages=[{"role": "user", "content": user}],
         )
         self._log_usage(msg, project, namespace, feature)
@@ -54,10 +94,10 @@ class ClaudeProvider:
     ) -> str:
         """Multimodal turn — `content` is a list of Anthropic content blocks (text + image +
         document), so ALLEN can SEE images/PDFs/video frames, not just read text about them."""
-        msg = self._client.messages.create(
+        msg = self._create(
             model=self.model,
             max_tokens=max_tokens,
-            system=system,
+            system=self._cached_system(system),
             messages=[{"role": "user", "content": content}],
         )
         self._log_usage(msg, project, namespace, feature)
@@ -71,10 +111,12 @@ class ClaudeProvider:
         executes a tool call and returns the result text. Returns the model's final text once it
         stops calling tools (this is how ALLEN delegates to ALLIE, and ALLIE calls ClickUp/Notion)."""
         msgs = list(messages)
+        cached_system = self._cached_system(system)
+        cached_tools = self._cached_tools(tools)
         last_text = ""
         for _ in range(max_rounds):
-            resp = self._client.messages.create(
-                model=self.model, max_tokens=max_tokens, system=system, messages=msgs, tools=tools,
+            resp = self._create(
+                model=self.model, max_tokens=max_tokens, system=cached_system, messages=msgs, tools=cached_tools,
             )
             self._log_usage(resp, project, namespace, feature)
             last_text = "".join(b.text for b in resp.content if b.type == "text").strip()
