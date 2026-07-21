@@ -62,6 +62,18 @@ def _run_reminders() -> None:
             logger.error("[scheduler] failed to send reminder %s: %s", r["id"], exc)
 
 
+def _run_token_health() -> None:
+    from . import token_health
+
+    logger.info("[scheduler] firing token-health check")
+    try:
+        # Alert (WhatsApp) on any revoked/missing token so a broken OAuth
+        # credential is caught before it silently breaks the morning brief.
+        token_health.run(alert=True)
+    except Exception as exc:
+        logger.error("[scheduler] token health failed: %s", exc)
+
+
 def start() -> None:
     """Start the cron scheduler. Each job independently no-ops if its own
     prerequisites aren't configured (WhatsApp for the daily report, Thoth/
@@ -86,6 +98,26 @@ def start() -> None:
             )
     else:
         logger.info("[scheduler] WhatsApp not configured — daily report not scheduled")
+
+    # Token-health check runs 15 min before the morning brief so a revoked OAuth
+    # credential is surfaced (and alerted) ahead of the brief that depends on it.
+    from . import google_auth
+
+    if settings.whatsapp_ready and google_auth.oauth_ready():
+        try:
+            hour, minute = (int(p) for p in settings.daily_report_time.split(":", 1))
+            check_minute = (minute - 15) % 60
+            check_hour = (hour - 1) % 24 if minute - 15 < 0 else hour
+            _scheduler.add_job(
+                _run_token_health, "cron", hour=check_hour, minute=check_minute, id="token_health"
+            )
+            jobs_added = True
+            logger.info(
+                "[scheduler] token-health check scheduled at %02d:%02d server local time",
+                check_hour, check_minute,
+            )
+        except (ValueError, AttributeError):
+            logger.error("[scheduler] invalid DAILY_REPORT_TIME — token-health check not scheduled")
 
     if settings.feed_watch_ready:
         _scheduler.add_job(

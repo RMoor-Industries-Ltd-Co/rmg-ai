@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     # LLM
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-6"  # override via env; pick per-message in the console
+    # Prompt caching — cache the stable prefix (tool schemas + system prompt) so the high-
+    # frequency agentic loops (morning brief, WhatsApp) pay ~1/10th on repeated input tokens.
+    # No behavioural change; below the model's min-cacheable-prefix it silently no-ops.
+    prompt_cache_enabled: bool = True
 
     # Attachments — multi-file staging
     max_attach_files: int = 5        # max files per chat turn

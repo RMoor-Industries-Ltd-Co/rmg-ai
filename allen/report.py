@@ -11,18 +11,27 @@ no skipped sections.
 
 *ALLEN Morning Brief — {date}*
 
-Pull live data from ClickUp, Notion, and your calendar for each section. \
-Report in THIS exact priority order:
+Gather live data for each section from the CORRECT source (noted per section). Personal \
+items come from your own calendar + the PERSONAL SYSTEMS ClickUp space directly. For every \
+BUSINESS section (RMI, RMG, PIAAR, HVN, AMG) delegate to ALLIE for the live ClickUp/Notion \
+data — she owns the business worlds. Report in THIS exact priority order:
 
-*1. Personal* — Rahm's personal calendar events today, health, home, errands, \
-personal commitments due or coming up
-*2. RMI* — RMoor Industries Ltd Co: open tasks, anything due or overdue, active priorities
-*3. RMG* — RMG / Master Atelier / Creator OS: content pipeline, production status, \
-anything blocked
-*4. PIAAR* — PIAAR: current projects and priorities
-*5. HVN* — HVN Haven: status and open items
-*6. PLP* — PLP: current projects and priorities
-*7. AMG* — Apex Meridian Group: operational status, open items
+*1. Personal* — your calendar (rahmind.consulting@rmoorind.com) events today, plus the \
+PERSONAL SYSTEMS space: health, home, errands, personal commitments due or coming up
+*2. RMI* — RMI - Company Headquarters ADMIN space: open tasks, anything due or overdue, \
+active priorities
+*3. RMG* — RMG - CREATOR SPACE (Master Atelier / Creator OS): content pipeline, production \
+status, anything blocked
+*4. PIAAR* — PIAAR lives INSIDE the RMG - CREATOR SPACE (not its own space): current PIAAR \
+projects and priorities from there
+*5. HVN* — HVN Haven is owned & operated by AMG: pull its status and open items from the \
+AMG space (delegate to ALLIE → Cappo)
+*6. PLP* — PLP is an occasional contractor (Angel's); it has NO dedicated ClickUp space. \
+Surface PLP items ONLY if any appear in the PERSONAL SYSTEMS space today; otherwise report \
+_Nothing flagged._ — do not fabricate a project
+*7. AMG* — Apex Meridian Group is managed by QUARTERS: read the Q1–Q4 folders in the AMG \
+space and report the current quarter's operational status and open items (delegate to \
+ALLIE → Cappo)
 
 Formatting rules (strictly enforced):
 - Under each header: 1–3 tight bullet points starting with -

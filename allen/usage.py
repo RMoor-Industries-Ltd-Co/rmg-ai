@@ -63,12 +63,32 @@ def log_llm(
     project: str = "rmg-ai",
     namespace: str = "",
     feature: str = "chat",
+    cache_creation_input_tokens: int = 0,
+    cache_read_input_tokens: int = 0,
 ) -> None:
+    """Record one Claude call. When prompt caching is on, ``input_tokens`` is only the
+    UNcached input; cached-prefix tokens arrive split out as cache_creation (billed 1.25x) and
+    cache_read (billed 0.1x). Folding those into the cost — and stashing the raw counts in meta
+    — makes the "$" dashboard show the real caching savings and lets us verify cache hits."""
     in_rate, out_rate = _claude_rate(model)
-    cost = (input_tokens / 1_000_000) * in_rate + (output_tokens / 1_000_000) * out_rate
+    cache_write = (cache_creation_input_tokens / 1_000_000) * in_rate * 1.25
+    cache_read = (cache_read_input_tokens / 1_000_000) * in_rate * 0.10
+    cost = (
+        (input_tokens / 1_000_000) * in_rate
+        + (output_tokens / 1_000_000) * out_rate
+        + cache_write
+        + cache_read
+    )
+    meta = None
+    if cache_creation_input_tokens or cache_read_input_tokens:
+        meta = {
+            "cache_creation_input_tokens": cache_creation_input_tokens,
+            "cache_read_input_tokens": cache_read_input_tokens,
+        }
     db.insert_usage(
         project, namespace, feature, "anthropic", model,
         input_tokens=input_tokens, output_tokens=output_tokens, cost_usd=round(cost, 6),
+        meta=meta,
     )
 
 
