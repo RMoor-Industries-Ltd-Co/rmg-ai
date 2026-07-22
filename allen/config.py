@@ -73,8 +73,10 @@ class Settings(BaseSettings):
     github_app_id: str = ""
     github_app_installation_id: str = ""
     github_app_private_key: str = ""  # PEM; \n-escaped when set as a single-line env var
-    # AMG (Cappo's domain) is its own system; flip on when Cappo matures under ALLIE.
-    allie_amg_enabled: bool = False
+    # AMG (Cappo's domain): ALLIE now reaches AMG's ClickUp directly (Cappo has matured
+    # under her and remains her AMG execution agent for deeper work). On by default; set
+    # ALLIE_AMG_ENABLED=false to re-wall her from AMG if ever needed.
+    allie_amg_enabled: bool = True
 
     # Cappo — the AMG operations AI, reachable by ALLIE's delegate_to_cappo (keyed M2M call).
     cappo_agent_url: str = "https://cappo.apex-meridian-group.com/api/agent"

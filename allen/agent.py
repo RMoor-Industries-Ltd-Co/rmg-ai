@@ -179,17 +179,21 @@ _ALLIE_MEMORY_ONLY_NOTE = (
 )
 
 _CLICKUP_ONLY_NOTE = (
-    "• Full CRUD over Rahm's PERSONAL SYSTEMS ClickUp (appointments, health, home, errands) — create, "
-    "update, delete his personal tasks directly. Read first for correct ids; make exactly the change asked. "
-    "This personal layer is yours, not ALLIE's.\n"
-    "Rule: business operational legwork → delegate to ALLIE; personal tasks → you. Answer Rahm in your own "
-    "natural spoken voice. NEVER mention tools, ALLIE, or ClickUp — to Rahm it is simply you, getting it done.\n"
+    "• Full CRUD over EVERY ClickUp space Rahm runs — his PERSONAL SYSTEMS (appointments, health, home, "
+    "errands), the BUSINESS worlds (RMG, RMI), AND AMG (Apex Meridian Group). You are the overseer: you can "
+    "create, update, delete tasks directly in any of these spaces. Read first for correct ids; make exactly "
+    "the change asked.\n"
+    "Rule: you can act directly anywhere, but for heavy business/AMG legwork (research, multi-step organizing) "
+    "you may still DELEGATE to ALLIE to keep yourself free — your call. Personal tasks stay with you. Answer "
+    "Rahm in your own natural spoken voice. NEVER mention tools, ALLIE, or ClickUp — to Rahm it is simply you, "
+    "getting it done.\n"
 )
 
 _CLICKUP_AND_CALENDAR_NOTE = (
-    "• Full CRUD over Rahm's PERSONAL SYSTEMS ClickUp (appointments, health, home, errands) — create, "
-    "update, delete his personal tasks directly. Read first for correct ids; make exactly the change asked. "
-    "This personal layer is yours, not ALLIE's.\n"
+    "• Full CRUD over EVERY ClickUp space Rahm runs — his PERSONAL SYSTEMS (appointments, health, home, "
+    "errands), the BUSINESS worlds (RMG, RMI), AND AMG (Apex Meridian Group). You are the overseer: create, "
+    "update, delete tasks directly in any of these spaces. Read first for correct ids; make exactly the "
+    "change asked.\n"
     "\n"
     "CALENDAR WORKFLOW — Rahm's calendar is rahmind.consulting@rmoorind.com, and ClickUp is already synced "
     "to it: ANY ClickUp task with a TIMED due date automatically appears on that calendar. So when Rahm "
@@ -202,7 +206,8 @@ _CLICKUP_AND_CALENDAR_NOTE = (
     "  – When it's genuinely unclear, ASK him first: 'want that tracked as a ClickUp task, or just on your "
     "calendar?' Don't assume.\n"
     "\n"
-    "Rule: business operational legwork → delegate to ALLIE; personal tasks + all calendar scheduling → you. "
+    "Rule: you can act directly in any ClickUp space (personal, RMG/RMI, AMG) and own all calendar "
+    "scheduling; for heavy business/AMG legwork you may still delegate to ALLIE to stay free — your call. "
     "Answer Rahm in your own natural spoken voice. NEVER mention tools, ALLIE, ClickUp/Notion, the calendar "
     "API, or that you delegated — to Rahm it is simply you, getting it done.\n"
 )
@@ -344,7 +349,7 @@ def respond_agentic(
     if clickup_on:
         tools += tools_clickup.TOOLS  # read tools always; writes only on full (interactive) calls
         if full:
-            tools += tools_clickup.WRITE_TOOLS  # full CRUD on Rahm's PERSONAL spaces
+            tools += tools_clickup.WRITE_TOOLS  # full CRUD across all ClickUp spaces (personal + RMG/RMI + AMG)
     if notion_on:
         tools += tools_notion.TOOLS
     if calendar_on:
@@ -392,7 +397,7 @@ def respond_agentic(
             ok = db.cancel_reminder(namespace, inp.get("reminder_id", ""))
             return "Cancelled." if ok else "No pending reminder with that id."
         if name.startswith("clickup_"):
-            res = tools_clickup.handle(name, inp, scope="personal")  # ALLEN direct = personal systems only
+            res = tools_clickup.handle(name, inp, scope="all")  # ALLEN direct = full reach (personal + RMG/RMI + AMG)
             if name in tools_clickup.WRITE_NAMES:
                 db.add_audit(namespace, "allen", name, json.dumps(inp), res)
             return res
