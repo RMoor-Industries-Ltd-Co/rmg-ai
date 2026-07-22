@@ -10,9 +10,12 @@ Guidance for Claude (and humans) working in this repo. Read this first.
 A FastAPI (Python) app serving the ALLEN console UI, agentic chat, voice, and ALLIE.
 ALLIE is not a standalone process or a separate chat surface — she's an in-process
 sub-agent ALLEN delegates to (`allen/allie.py`, invoked from `allen/agent.py`),
-scoped to Rahm's BUSINESS worlds (RMG + RMI) and explicitly walled off from AMG,
-which is Cappo's domain one tier further down the chain (Rahm → ALLEN → ALLIE →
-Cappo). Deployed as a Docker container on a dedicated ALLEN server.
+scoped to Rahm's BUSINESS worlds (RMG + RMI). She now also reaches AMG's ClickUp
+directly (`allie_amg_enabled`, on by default), with Cappo remaining her deeper-AMG
+execution agent one tier down the chain (Rahm → ALLEN → ALLIE → Cappo). Only Rahm's
+PERSONAL systems stay walled off from her (the gatekeeper rule). ALLEN himself, as
+overseer, reaches every ClickUp space directly (personal + RMG/RMI + AMG). Deployed as
+a Docker container on a dedicated ALLEN server.
 
 ## Commands
 
@@ -106,7 +109,7 @@ Never paste real secret values into chat or any committed file.
 | `allen/main.py` | FastAPI app, mounts static files and router |
 | `allen/web.py` | ALLEN I VERSE console routes (served at `/`) |
 | `allen/agent.py` | ALLEN agentic loop + tool dispatch |
-| `allen/allie.py` | ALLIE — ALLEN's in-process business-ops sub-agent (RMG + RMI only; NOT AMG, that's Cappo's domain) |
+| `allen/allie.py` | ALLIE — ALLEN's in-process business-ops sub-agent (RMG + RMI, plus direct AMG ClickUp access; Cappo remains her deeper-AMG execution agent) |
 | `allen/static/console.html` | Full console UI (single file, no build step) |
 | `allen/tools_gdrive.py` | Google Drive read + write tools |
 | `allen/tools_calendar.py` | Google Calendar tools |

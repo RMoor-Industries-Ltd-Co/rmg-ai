@@ -179,17 +179,21 @@ _ALLIE_MEMORY_ONLY_NOTE = (
 )
 
 _CLICKUP_ONLY_NOTE = (
-    "• Full CRUD over Rahm's PERSONAL SYSTEMS ClickUp (appointments, health, home, errands) — create, "
-    "update, delete his personal tasks directly. Read first for correct ids; make exactly the change asked. "
-    "This personal layer is yours, not ALLIE's.\n"
-    "Rule: business operational legwork → delegate to ALLIE; personal tasks → you. Answer Rahm in your own "
-    "natural spoken voice. NEVER mention tools, ALLIE, or ClickUp — to Rahm it is simply you, getting it done.\n"
+    "• Full CRUD over EVERY ClickUp space Rahm runs — his PERSONAL SYSTEMS (appointments, health, home, "
+    "errands), the BUSINESS worlds (RMG, RMI), AND AMG (Apex Meridian Group). You are the overseer: you can "
+    "create, update, delete tasks directly in any of these spaces. Read first for correct ids; make exactly "
+    "the change asked.\n"
+    "Rule: you can act directly anywhere, but for heavy business/AMG legwork (research, multi-step organizing) "
+    "you may still DELEGATE to ALLIE to keep yourself free — your call. Personal tasks stay with you. Answer "
+    "Rahm in your own natural spoken voice. NEVER mention tools, ALLIE, or ClickUp — to Rahm it is simply you, "
+    "getting it done.\n"
 )
 
 _CLICKUP_AND_CALENDAR_NOTE = (
-    "• Full CRUD over Rahm's PERSONAL SYSTEMS ClickUp (appointments, health, home, errands) — create, "
-    "update, delete his personal tasks directly. Read first for correct ids; make exactly the change asked. "
-    "This personal layer is yours, not ALLIE's.\n"
+    "• Full CRUD over EVERY ClickUp space Rahm runs — his PERSONAL SYSTEMS (appointments, health, home, "
+    "errands), the BUSINESS worlds (RMG, RMI), AND AMG (Apex Meridian Group). You are the overseer: create, "
+    "update, delete tasks directly in any of these spaces. Read first for correct ids; make exactly the "
+    "change asked.\n"
     "\n"
     "CALENDAR WORKFLOW — Rahm's calendar is rahmind.consulting@rmoorind.com, and ClickUp is already synced "
     "to it: ANY ClickUp task with a TIMED due date automatically appears on that calendar. So when Rahm "
@@ -202,7 +206,8 @@ _CLICKUP_AND_CALENDAR_NOTE = (
     "  – When it's genuinely unclear, ASK him first: 'want that tracked as a ClickUp task, or just on your "
     "calendar?' Don't assume.\n"
     "\n"
-    "Rule: business operational legwork → delegate to ALLIE; personal tasks + all calendar scheduling → you. "
+    "Rule: you can act directly in any ClickUp space (personal, RMG/RMI, AMG) and own all calendar "
+    "scheduling; for heavy business/AMG legwork you may still delegate to ALLIE to stay free — your call. "
     "Answer Rahm in your own natural spoken voice. NEVER mention tools, ALLIE, ClickUp/Notion, the calendar "
     "API, or that you delegated — to Rahm it is simply you, getting it done.\n"
 )
@@ -228,6 +233,33 @@ _DRIVE_NOTE = (
     "DRIVE — use drive_search, drive_list_folder, drive_read_file to look things up in Rahm's Google Drive. "
     "Use drive_create_folder, drive_create_file, drive_update_file, drive_move_file, drive_delete_file to "
     "organize, save, or manage files directly. Write ops are audit-logged.\n"
+)
+
+_RMI_VAULT_NOTE_TMPL = (
+    "\n"
+    "RMI RECORDS BOOK — CLOSING WORKFLOW. Rahm periodically tells you a Records Book document is complete "
+    "and filed to the RMI vault (Google Drive folder id {vault} — the store of FINAL copies of RMI "
+    "governance/records-book documents). When he names a specific completed document, run this sequence "
+    "yourself, then report back concisely (which page you closed, and whether it completed a Volume):\n"
+    "  1. VERIFY it is really in the vault: drive_list_folder {vault} (or drive_search within it) and "
+    "confirm a file for that document is present. If it isn't there, tell Rahm and STOP — never close a "
+    "page whose final copy you cannot find.\n"
+    "  2. LEGAL AGREEMENTS → mirror to AMG: if the document is a Volume III Legal Agreement (its code is "
+    "RMI-LEG-###), copy its final file from the vault into the AMG legal-agreements Drive folder (id {amg}) "
+    "with drive_copy_file — the vault copy stays put. Do this ONLY for RMI-LEG documents; no other type is "
+    "mirrored to AMG.\n"
+    "  3. CLOSE THE PAGE: in the 'RMI Records Book' ClickUp list (id 901714524235, under RMI HQ ADMIN → "
+    "OPERATIONS), find the task whose name starts with that document's code (e.g. 'RMI-RES-002'), set its "
+    "status to complete, and add a comment stamping the completion time from the current date/time in your "
+    "context — e.g. 'Completed & filed to vault — <YYYY-MM-DD HH:MM ET>'.\n"
+    "  4. CHECK THE VOLUME: read the whole list (clickup_list_tasks, include_closed true) and decide whether "
+    "EVERY document in that document's Volume is now complete. Volume mapping: every task in the RMI Records "
+    "Book list is Volume I (Corporate Records Book); RMI-GOV-001 is its own separate top line; Volumes II–V "
+    "have no page-tasks yet, so ignore them until they do.\n"
+    "  5. CLOSE THE AMG BOX only if the whole Volume is complete: read the description of the AMG 'Governance "
+    "Agreements for RMI' task (id 86e22c5ef), change that Volume's markdown checkbox from '- [ ]' to '- [x]' "
+    "(leave every other line exactly as-is), and write the full description back with clickup_update_task. "
+    "Never tick a Volume box while any page in it is still open.\n"
 )
 
 _GITHUB_NOTE = (
@@ -268,6 +300,8 @@ _FORMS_NOTE = (
 def _build_delegation_note(
     *, clickup_ready: bool, notion_ready: bool, calendar_ready: bool,
     youtube_ready: bool, gdrive_ready: bool, github_ready: bool, reminders_ready: bool = False,
+    forms_ready: bool = True, rmi_vault_ready: bool = False,
+    vault_folder_id: str = "", amg_legal_folder_id: str = "",
 ) -> str:
     """Every section here describes a real, currently-attached tool — nothing is claimed
     that isn't actually in this turn's tool list. A prior version described every
@@ -288,11 +322,14 @@ def _build_delegation_note(
         note += _YOUTUBE_NOTE
     if gdrive_ready:
         note += _DRIVE_NOTE
+    if rmi_vault_ready:
+        note += _RMI_VAULT_NOTE_TMPL.format(vault=vault_folder_id, amg=amg_legal_folder_id)
     if github_ready:
         note += _GITHUB_NOTE
     if reminders_ready:
         note += _REMINDER_NOTE
-    note += _FORMS_NOTE
+    if forms_ready:
+        note += _FORMS_NOTE
     return note
 
 
@@ -303,6 +340,7 @@ def respond_agentic(
     namespace: str,
     max_tokens: int = 900,
     model: Optional[str] = None,
+    tool_scope: Optional[set[str]] = None,
 ) -> str:
     from . import (
         tools_calendar,
@@ -315,35 +353,58 @@ def respond_agentic(
     )
     from .config import settings
 
-    calendar_ready = tools_calendar.ready()
-    youtube_ready = tools_youtube.ready()
-    gdrive_ready = tools_gdrive.ready()
+    # tool_scope=None → full interactive tool set (unchanged). A scoped call (e.g. the
+    # scheduled morning brief) attaches only the named categories, so a background job
+    # doesn't pay to send the full GitHub/Drive/YouTube/forms schemas it never uses. The
+    # delegation note is built from the SAME effective flags, preserving the invariant that
+    # it only describes tools actually attached this turn.
+    full = tool_scope is None
+
+    def want(cat: str) -> bool:
+        return full or cat in tool_scope
+
+    calendar_on = tools_calendar.ready() and want("calendar")
+    youtube_on = tools_youtube.ready() and want("youtube")
+    gdrive_on = tools_gdrive.ready() and want("gdrive")
+    clickup_on = settings.clickup_ready and want("clickup")
+    notion_on = settings.notion_ready and want("notion")
+    github_on = settings.github_ready and want("github")
+    reminders_on = bool(settings.whatsapp_ready and settings.database_url) and want("reminders")
+    web_on = want("web")
+    forms_on = want("forms")
 
     tools = list(ALLEN_TOOLS)
-    if settings.whatsapp_ready and settings.database_url:
+    if reminders_on:
         tools += REMINDER_TOOLS  # push alerts + scheduled WhatsApp reminders
-    if settings.clickup_ready:
-        tools += tools_clickup.TOOLS + tools_clickup.WRITE_TOOLS  # full CRUD on Rahm's PERSONAL spaces
-    if settings.notion_ready:
+    if clickup_on:
+        tools += tools_clickup.TOOLS  # read tools always; writes only on full (interactive) calls
+        if full:
+            tools += tools_clickup.WRITE_TOOLS  # full CRUD across all ClickUp spaces (personal + RMG/RMI + AMG)
+    if notion_on:
         tools += tools_notion.TOOLS
-    if calendar_ready:
+    if calendar_on:
         tools += tools_calendar.TOOLS  # ALLEN manages Rahm's personal calendar
-    tools += tools_web.TOOLS  # web fetch always available
-    if youtube_ready:
+    if web_on:
+        tools += tools_web.TOOLS  # web fetch (full interactive set)
+    if youtube_on:
         tools += tools_youtube.TOOLS  # YouTube ingest → Drive
-    if gdrive_ready:
+    if gdrive_on:
         tools += tools_gdrive.TOOLS  # Drive read + CRUD (TOOLS already includes WRITE_TOOLS)
-    if settings.github_ready:
+    if github_on:
         tools += tools_github.TOOLS + tools_github.WRITE_TOOLS  # allen-piaar-control-bot — PIAAR org visibility
 
-    forms.ensure_seed_forms(namespace)
-    tools += forms.build_tool_schemas(namespace) + forms.META_TOOLS
+    if forms_on:
+        forms.ensure_seed_forms(namespace)
+        tools += forms.build_tool_schemas(namespace) + forms.META_TOOLS
 
     delegation_note = _build_delegation_note(
-        clickup_ready=settings.clickup_ready, notion_ready=settings.notion_ready,
-        calendar_ready=calendar_ready, youtube_ready=youtube_ready,
-        gdrive_ready=gdrive_ready, github_ready=settings.github_ready,
-        reminders_ready=bool(settings.whatsapp_ready and settings.database_url),
+        clickup_ready=clickup_on, notion_ready=notion_on,
+        calendar_ready=calendar_on, youtube_ready=youtube_on,
+        gdrive_ready=gdrive_on, github_ready=github_on,
+        reminders_ready=reminders_on, forms_ready=forms_on,
+        rmi_vault_ready=(clickup_on and gdrive_on and bool(settings.rmi_vault_folder_id)),
+        vault_folder_id=settings.rmi_vault_folder_id,
+        amg_legal_folder_id=settings.amg_legal_agreements_folder_id,
     )
     system = chat.build_system(None, None, context) + delegation_note
     messages = [{"role": "user", "content": chat.build_user(message, history)}]
@@ -369,7 +430,7 @@ def respond_agentic(
             ok = db.cancel_reminder(namespace, inp.get("reminder_id", ""))
             return "Cancelled." if ok else "No pending reminder with that id."
         if name.startswith("clickup_"):
-            res = tools_clickup.handle(name, inp, scope="personal")  # ALLEN direct = personal systems only
+            res = tools_clickup.handle(name, inp, scope="all")  # ALLEN direct = full reach (personal + RMG/RMI + AMG)
             if name in tools_clickup.WRITE_NAMES:
                 db.add_audit(namespace, "allen", name, json.dumps(inp), res)
             return res
