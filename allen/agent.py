@@ -235,6 +235,33 @@ _DRIVE_NOTE = (
     "organize, save, or manage files directly. Write ops are audit-logged.\n"
 )
 
+_RMI_VAULT_NOTE_TMPL = (
+    "\n"
+    "RMI RECORDS BOOK — CLOSING WORKFLOW. Rahm periodically tells you a Records Book document is complete "
+    "and filed to the RMI vault (Google Drive folder id {vault} — the store of FINAL copies of RMI "
+    "governance/records-book documents). When he names a specific completed document, run this sequence "
+    "yourself, then report back concisely (which page you closed, and whether it completed a Volume):\n"
+    "  1. VERIFY it is really in the vault: drive_list_folder {vault} (or drive_search within it) and "
+    "confirm a file for that document is present. If it isn't there, tell Rahm and STOP — never close a "
+    "page whose final copy you cannot find.\n"
+    "  2. LEGAL AGREEMENTS → mirror to AMG: if the document is a Volume III Legal Agreement (its code is "
+    "RMI-LEG-###), copy its final file from the vault into the AMG legal-agreements Drive folder (id {amg}) "
+    "with drive_copy_file — the vault copy stays put. Do this ONLY for RMI-LEG documents; no other type is "
+    "mirrored to AMG.\n"
+    "  3. CLOSE THE PAGE: in the 'RMI Records Book' ClickUp list (id 901714524235, under RMI HQ ADMIN → "
+    "OPERATIONS), find the task whose name starts with that document's code (e.g. 'RMI-RES-002'), set its "
+    "status to complete, and add a comment stamping the completion time from the current date/time in your "
+    "context — e.g. 'Completed & filed to vault — <YYYY-MM-DD HH:MM ET>'.\n"
+    "  4. CHECK THE VOLUME: read the whole list (clickup_list_tasks, include_closed true) and decide whether "
+    "EVERY document in that document's Volume is now complete. Volume mapping: every task in the RMI Records "
+    "Book list is Volume I (Corporate Records Book); RMI-GOV-001 is its own separate top line; Volumes II–V "
+    "have no page-tasks yet, so ignore them until they do.\n"
+    "  5. CLOSE THE AMG BOX only if the whole Volume is complete: read the description of the AMG 'Governance "
+    "Agreements for RMI' task (id 86e22c5ef), change that Volume's markdown checkbox from '- [ ]' to '- [x]' "
+    "(leave every other line exactly as-is), and write the full description back with clickup_update_task. "
+    "Never tick a Volume box while any page in it is still open.\n"
+)
+
 _GITHUB_NOTE = (
     "\n"
     "GITHUB — you are allen-piaar-control-bot, with your own identity across every repo in the "
@@ -273,7 +300,8 @@ _FORMS_NOTE = (
 def _build_delegation_note(
     *, clickup_ready: bool, notion_ready: bool, calendar_ready: bool,
     youtube_ready: bool, gdrive_ready: bool, github_ready: bool, reminders_ready: bool = False,
-    forms_ready: bool = True,
+    forms_ready: bool = True, rmi_vault_ready: bool = False,
+    vault_folder_id: str = "", amg_legal_folder_id: str = "",
 ) -> str:
     """Every section here describes a real, currently-attached tool — nothing is claimed
     that isn't actually in this turn's tool list. A prior version described every
@@ -294,6 +322,8 @@ def _build_delegation_note(
         note += _YOUTUBE_NOTE
     if gdrive_ready:
         note += _DRIVE_NOTE
+    if rmi_vault_ready:
+        note += _RMI_VAULT_NOTE_TMPL.format(vault=vault_folder_id, amg=amg_legal_folder_id)
     if github_ready:
         note += _GITHUB_NOTE
     if reminders_ready:
@@ -372,6 +402,9 @@ def respond_agentic(
         calendar_ready=calendar_on, youtube_ready=youtube_on,
         gdrive_ready=gdrive_on, github_ready=github_on,
         reminders_ready=reminders_on, forms_ready=forms_on,
+        rmi_vault_ready=(clickup_on and gdrive_on and bool(settings.rmi_vault_folder_id)),
+        vault_folder_id=settings.rmi_vault_folder_id,
+        amg_legal_folder_id=settings.amg_legal_agreements_folder_id,
     )
     system = chat.build_system(None, None, context) + delegation_note
     messages = [{"role": "user", "content": chat.build_user(message, history)}]

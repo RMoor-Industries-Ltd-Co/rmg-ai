@@ -171,6 +171,24 @@ WRITE_TOOLS = [
         },
     },
     {
+        "name": "drive_copy_file",
+        "description": (
+            "Copy an existing Drive file into another folder — the ORIGINAL stays in place. Use to mirror "
+            "a final document into a second location (e.g. copying a signed RMI legal agreement from the "
+            "vault into the AMG legal-agreements folder) without removing it from the source."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "file_id": {"type": "string", "description": "Drive file ID to copy."},
+                "dest_parent_id": {"type": "string", "description": "Destination folder ID for the new copy."},
+                "name": {"type": "string", "description": "Optional name for the copy (defaults to the original's name)."},
+                "account": {"type": "string", "description": "Google account email to use. Omit for default."},
+            },
+            "required": ["file_id", "dest_parent_id"],
+        },
+    },
+    {
         "name": "drive_move_file",
         "description": "Move a file or folder to a different parent folder in Google Drive.",
         "input_schema": {
@@ -412,6 +430,27 @@ def _update_file(args: dict) -> str:
     return f"Updated file '{d.get('name', file_id)}' (id {d.get('id', file_id)})"
 
 
+def _copy_file(args: dict) -> str:
+    account = args.get("account")
+    file_id = args["file_id"]
+    body: dict = {"parents": [args["dest_parent_id"]]}
+    if args.get("name"):
+        body["name"] = args["name"]
+    r = requests.post(
+        f"{DRIVE_BASE}/files/{file_id}/copy",
+        headers={**_h(account), "Content-Type": "application/json"},
+        params={"fields": "id,name,webViewLink", "supportsAllDrives": "true"},
+        json=body,
+        timeout=60,
+    )
+    r.raise_for_status()
+    d = r.json()
+    return (
+        f"Copied to folder {args['dest_parent_id']} as '{d.get('name', file_id)}' "
+        f"(id {d.get('id', '')}) — {d.get('webViewLink', '')}"
+    )
+
+
 def _move_file(args: dict) -> str:
     account = args.get("account")
     file_id = args["file_id"]
@@ -475,6 +514,8 @@ def handle(name: str, args: dict) -> str:
             return _upload_binary(args)
         if name == "drive_update_file":
             return _update_file(args)
+        if name == "drive_copy_file":
+            return _copy_file(args)
         if name == "drive_move_file":
             return _move_file(args)
         if name == "drive_delete_file":

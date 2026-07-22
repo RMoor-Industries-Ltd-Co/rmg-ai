@@ -42,6 +42,12 @@ class Settings(BaseSettings):
     gdrive_refresh_token: str = ""
     gdrive_scripts_folder_id: str = ""
     gdrive_youtube_folder_id: str = ""  # Drive folder for YouTube audio/video/transcript saves
+    # RMI Records Book vault — the store of FINAL copies of RMI governance/records-book documents.
+    # Must be shared with the ALLEN Drive identity (rahm@rmasters.group) for the closing workflow to reach it.
+    rmi_vault_folder_id: str = "13cgotDbQaEmjoZ6ajgbi0pfDFiPWswgF"
+    # AMG legal-agreements Drive folder — final copies of RMI Legal Agreements (RMI-LEG-*) are mirrored here
+    # during closing. Also must be shared with rahm@rmasters.group.
+    amg_legal_agreements_folder_id: str = "1NFuVCiSEi_vxY-3A_fSALRxZwHKgbSBg"
 
     # Atelier (Creator OS) — all folders in rahm@rmasters.group Drive
     atelier_drive_account: str = "rahm@rmasters.group"
