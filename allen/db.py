@@ -229,6 +229,16 @@ def init_db() -> None:
             -- Older deployments predate the attempts column; add it idempotently so the
             -- scheduler's dead-letter logic (record_reminder_failure) works after upgrade.
             ALTER TABLE reminders ADD COLUMN IF NOT EXISTS attempts integer NOT NULL DEFAULT 0;
+
+            -- Canonical reply catalog (allen/replies.py). Rahm-editable overrides of ALLEN's
+            -- standard user-facing messages (transient-failure notices, error explanations,
+            -- reminder formatting). Absent rows fall back to the built-in defaults in code.
+            CREATE TABLE IF NOT EXISTS canonical_replies (
+                key text PRIMARY KEY,
+                template text NOT NULL,
+                updated_at timestamptz DEFAULT now(),
+                updated_by text
+            );
             """
         )
 
@@ -277,6 +287,34 @@ def set_config(key: str, value: str) -> None:
             "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()",
             (key, value),
         )
+
+
+def get_reply_override(key: str) -> Optional[str]:
+    """Rahm-set override for a canonical reply, or None to use the built-in default."""
+    if not db_ready():
+        return None
+    with _cursor() as cur:
+        cur.execute("SELECT template FROM canonical_replies WHERE key = %s", (key,))
+        row = cur.fetchone()
+        return row["template"] if row else None
+
+
+def upsert_reply(key: str, template: str, updated_by: str = "rahm") -> None:
+    with _cursor() as cur:
+        cur.execute(
+            "INSERT INTO canonical_replies (key, template, updated_by) VALUES (%s, %s, %s) "
+            "ON CONFLICT (key) DO UPDATE SET template = EXCLUDED.template, "
+            "updated_at = now(), updated_by = EXCLUDED.updated_by",
+            (key, template, updated_by),
+        )
+
+
+def list_reply_overrides() -> list[dict]:
+    if not db_ready():
+        return []
+    with _cursor() as cur:
+        cur.execute("SELECT key, template, updated_at, updated_by FROM canonical_replies ORDER BY key")
+        return list(cur.fetchall())
 
 
 def seed_default() -> None:

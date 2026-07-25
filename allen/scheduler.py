@@ -60,7 +60,7 @@ def _run_memory_backup() -> None:
 
 
 def _run_reminders() -> None:
-    from . import db, whatsapp
+    from . import db, replies, whatsapp
 
     try:
         due = db.list_due_reminders()
@@ -69,7 +69,7 @@ def _run_reminders() -> None:
         return
     for r in due:
         try:
-            whatsapp.send_message(f"⏰ {r['message']}")
+            whatsapp.send_message(replies.get("reminder_prefix", message=r["message"]))
             db.mark_reminder_sent(r["id"])
             logger.info("[scheduler] sent reminder %s", r["id"])
         except Exception as exc:

@@ -3,7 +3,7 @@ import logging
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import Response, PlainTextResponse
 
-from . import backup, brands, chat, db, docs, emotion, meeting, metadata, scheduler, scripts, speech, topics, usage, web
+from . import backup, brands, chat, db, docs, emotion, meeting, metadata, replies, scheduler, scripts, speech, topics, usage, web
 from .config import settings
 from .models import (
     ChatRequest,
@@ -372,6 +372,27 @@ async def whatsapp_inbound(request: Request) -> PlainTextResponse:
 
     whatsapp.reply_async(body, _handle)
     return PlainTextResponse("<Response/>", media_type="text/xml")
+
+
+@app.get("/admin/replies", dependencies=[Depends(require_admin)])
+def admin_list_replies() -> dict:
+    """ALLEN's canonical reply catalog — key, effective text, built-in default, and whether
+    Rahm has overridden it. This is the source-of-truth list for his standard messages."""
+    return {"replies": replies.list_all()}
+
+
+@app.put("/admin/replies/{key}", dependencies=[Depends(require_admin)])
+async def admin_set_reply(key: str, request: Request) -> dict:
+    """Override a canonical reply's wording. Body: {"template": "..."}. Unknown keys are
+    rejected so a typo can't create a dead entry; pass "" to fall back to the default."""
+    if key not in replies.DEFAULTS or key == "_unknown":
+        raise HTTPException(404, f"unknown reply key '{key}'")
+    if not db.db_ready():
+        raise HTTPException(503, "DB not configured — reply overrides need Postgres")
+    payload = await request.json()
+    template = (payload or {}).get("template", "")
+    db.upsert_reply(key, template)
+    return {"ok": True, "key": key, "effective": replies.get(key) if template else replies.DEFAULTS[key]}
 
 
 @app.post("/whatsapp/test", dependencies=[Depends(require_admin)])

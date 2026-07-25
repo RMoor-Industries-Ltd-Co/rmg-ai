@@ -6,10 +6,13 @@ This wraps chat.build_system/build_user (ALLEN's exact persona) in a tool-use lo
 for now, is delegate_to_allie. As ALLIE gains ClickUp/Notion tools, ALLEN's reach grows for free."""
 
 import json
+import logging
 from typing import Optional
 
 from . import allie, chat, db, forms
 from .llm import get_llm
+
+logger = logging.getLogger(__name__)
 
 
 def _format_audit(rows: list) -> str:
@@ -468,18 +471,31 @@ def respond_agentic(
         return f"(unknown tool: {name})"
 
     llm = get_llm()
-    if model and hasattr(llm, "model") and model != llm.model:
-        # Swap model for this single call without mutating the shared provider.
-        old = llm.model
-        llm.model = model
-        try:
-            return llm.run_agent(
-                system, messages, tools, runner, max_rounds=6, max_tokens=max_tokens,
-                namespace=namespace, feature="allen_agent",
-            )
-        finally:
-            llm.model = old
-    return llm.run_agent(
-        system, messages, tools, runner, max_rounds=6, max_tokens=max_tokens,
-        namespace=namespace, feature="allen_agent",
-    )
+
+    def _invoke() -> str:
+        if model and hasattr(llm, "model") and model != llm.model:
+            # Swap model for this single call without mutating the shared provider.
+            old = llm.model
+            llm.model = model
+            try:
+                return llm.run_agent(
+                    system, messages, tools, runner, max_rounds=6, max_tokens=max_tokens,
+                    namespace=namespace, feature="allen_agent",
+                )
+            finally:
+                llm.model = old
+        return llm.run_agent(
+            system, messages, tools, runner, max_rounds=6, max_tokens=max_tokens,
+            namespace=namespace, feature="allen_agent",
+        )
+
+    # The client already retries transient errors with backoff (llm.py). If the call still
+    # fails, explain it gracefully from the canonical reply catalog instead of surfacing a
+    # raw 500 — a calm transient-overload notice when retryable, else a generic failure.
+    try:
+        return _invoke()
+    except Exception as exc:
+        from . import replies
+
+        logger.error("[agent] model call failed after retries: %s", exc)
+        return replies.for_exception(exc)
