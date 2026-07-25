@@ -60,6 +60,15 @@ def _run_reminders() -> None:
             logger.info("[scheduler] sent reminder %s", r["id"])
         except Exception as exc:
             logger.error("[scheduler] failed to send reminder %s: %s", r["id"], exc)
+            # Count the failure; after a few tries the reminder is dead-lettered so a
+            # poison message can't spam the 5-minute poll forever once WhatsApp recovers.
+            try:
+                if db.record_reminder_failure(r["id"]):
+                    logger.error(
+                        "[scheduler] reminder %s dead-lettered after repeated send failures", r["id"]
+                    )
+            except Exception as exc2:
+                logger.error("[scheduler] could not record reminder failure %s: %s", r["id"], exc2)
 
 
 def start() -> None:

@@ -17,6 +17,21 @@ def db_ready() -> bool:
     return bool(settings.database_url)
 
 
+def ping() -> bool:
+    """Real liveness check — actually round-trips a query to Postgres. Returns False
+    (never raises) when unconfigured or unreachable, so /health can report the truth
+    instead of just whether the env var is set."""
+    if not db_ready():
+        return False
+    try:
+        with _cursor() as cur:
+            cur.execute("SELECT 1")
+            cur.fetchone()
+        return True
+    except Exception:
+        return False
+
+
 def _get_pool():
     global _pool
     if _pool is None and settings.database_url:
@@ -207,9 +222,13 @@ def init_db() -> None:
                 message text NOT NULL,
                 due_at timestamptz NOT NULL,
                 sent boolean NOT NULL DEFAULT false,
+                attempts integer NOT NULL DEFAULT 0,
                 created_at timestamptz DEFAULT now()
             );
             CREATE INDEX IF NOT EXISTS reminders_due_idx ON reminders (due_at) WHERE NOT sent;
+            -- Older deployments predate the attempts column; add it idempotently so the
+            -- scheduler's dead-letter logic (record_reminder_failure) works after upgrade.
+            ALTER TABLE reminders ADD COLUMN IF NOT EXISTS attempts integer NOT NULL DEFAULT 0;
             """
         )
 
@@ -802,6 +821,22 @@ def list_due_reminders() -> list[dict]:
 def mark_reminder_sent(reminder_id: str) -> None:
     with _cursor() as cur:
         cur.execute("UPDATE reminders SET sent = true WHERE id = %s", (reminder_id,))
+
+
+def record_reminder_failure(reminder_id: str, max_attempts: int = 3) -> bool:
+    """Count a failed send attempt. Once attempts reach max_attempts, mark the reminder
+    sent (dead-letter it) so the 5-minute poller stops retrying a poison message forever.
+    Returns True if this call gave up on the reminder."""
+    with _cursor() as cur:
+        cur.execute(
+            "UPDATE reminders SET attempts = attempts + 1 WHERE id = %s RETURNING attempts",
+            (reminder_id,),
+        )
+        row = cur.fetchone()
+        if row and row.get("attempts", 0) >= max_attempts:
+            cur.execute("UPDATE reminders SET sent = true WHERE id = %s", (reminder_id,))
+            return True
+    return False
 
 
 def list_upcoming_reminders(namespace: str, limit: int = 20) -> list[dict]:

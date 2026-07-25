@@ -48,7 +48,10 @@ def _startup() -> None:
             db.seed_default()
         except Exception as exc:  # don't crash the brain if the DB is slow to come up
             print(f"[allen] DB init deferred: {exc}")
-    scheduler.start()
+    try:
+        scheduler.start()
+    except Exception as exc:  # a scheduler failure must not take down the whole app
+        print(f"[allen] scheduler failed to start: {exc}")
 
 
 @app.on_event("shutdown")
@@ -85,15 +88,22 @@ def require_admin(x_admin_key: str | None = Header(default=None)) -> None:
 
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
+    # DB is probed for real (round-trips SELECT 1) rather than just checking the env var,
+    # so a configured-but-unreachable Postgres shows as "unreachable" and degrades status.
+    if not settings.database_url:
+        db_status = "unconfigured"
+    else:
+        db_status = "ok" if db.ping() else "unreachable"
     checks = {
         "llm": "ok" if settings.llm_ready else "unconfigured",
         "tts": "ok" if settings.tts_ready else "unconfigured",
         "stt": "ok" if settings.stt_ready else "unconfigured",
         "docs": "ok" if settings.docs_ready else "unconfigured",
-        "db": "ok" if settings.database_url else "unconfigured",
+        "db": db_status,
         "whatsapp": "ok" if settings.whatsapp_ready else "unconfigured",
     }
-    return HealthResponse(status="ok" if settings.llm_ready else "degraded", checks=checks)
+    healthy = settings.llm_ready and db_status != "unreachable"
+    return HealthResponse(status="ok" if healthy else "degraded", checks=checks)
 
 
 # ---- platform: identity, projects, namespaced memory ----

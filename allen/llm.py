@@ -19,7 +19,14 @@ class ClaudeProvider:
     def __init__(self) -> None:
         from anthropic import Anthropic
 
-        self._client = Anthropic(api_key=settings.anthropic_api_key)
+        # Explicit timeout + retry count so a transient 429/529/5xx/connection blip is
+        # retried with exponential backoff (SDK-native) instead of surfacing to Rahm as a
+        # one-shot 500/502. Without these the client uses undeclared defaults (2 retries).
+        self._client = Anthropic(
+            api_key=settings.anthropic_api_key,
+            timeout=settings.anthropic_timeout,
+            max_retries=settings.anthropic_max_retries,
+        )
         self.model = settings.anthropic_model
         self.effort = (settings.anthropic_effort or "").strip()
 

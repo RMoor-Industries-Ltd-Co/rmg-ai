@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     # Reasoning-effort hint (low|medium|high|xhigh|max), sent as output_config.effort.
     # Blank disables the hint entirely. Degrades gracefully if the model/SDK rejects it.
     anthropic_effort: str = "high"
+    # Resilience: explicit per-request timeout (seconds) and automatic retry count on the
+    # Anthropic client. The SDK retries connection errors, 408/409/429, and >=500 with
+    # exponential backoff — raising max_retries hardens ALLEN against transient overload
+    # (429/529) instead of surfacing a one-shot failure to Rahm.
+    anthropic_timeout: float = 60.0
+    anthropic_max_retries: int = 4
 
     # Attachments — multi-file staging
     max_attach_files: int = 5        # max files per chat turn
