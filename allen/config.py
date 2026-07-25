@@ -84,6 +84,10 @@ class Settings(BaseSettings):
     memory_backup_interval_hours: int = 1
     memory_backup_account: str = ""            # blank -> atelier_drive_account
     memory_local_dir: str = "/tmp/allen-memory"  # local mirror; mount a volume here to make it durable
+    # Hard cap on a single namespace snapshot file. If exceeded, the lowest-priority (oldest,
+    # non-pinned) memories are trimmed FROM THE FILE ONLY — the DB keeps everything — so one
+    # Drive file can never grow unbounded. The whole vault is also purgeable (see backup.purge).
+    memory_backup_max_bytes: int = 5_000_000   # 5 MB
 
     # Operational data sources for ALLIE (project mgmt + knowledge base)
     clickup_api_token: str = ""

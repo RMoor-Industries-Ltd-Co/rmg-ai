@@ -44,10 +44,10 @@ def _json_default(o):
     return str(o)
 
 
-def snapshot(namespace: str) -> str:
-    """Full JSON snapshot of a namespace's active memories (same shape as the daily dumps)."""
-    mems = db.list_memories(namespace)
-    slim = [
+def _slim(namespace: str) -> list[dict]:
+    """A namespace's active memories in retrieval-priority order (pinned/core first),
+    reduced to the backup shape (same fields as the existing dated dumps)."""
+    return [
         {
             "id": m.get("id"),
             "content": m.get("content"),
@@ -57,9 +57,37 @@ def snapshot(namespace: str) -> str:
             "pinned": m.get("pinned"),
             "created_at": m.get("created_at"),
         }
-        for m in mems
+        for m in db.list_memories(namespace)
     ]
-    return json.dumps(slim, default=_json_default, ensure_ascii=False)
+
+
+def _dumps(rows: list[dict]) -> str:
+    return json.dumps(rows, default=_json_default, ensure_ascii=False)
+
+
+def snapshot(namespace: str) -> str:
+    """Full (uncapped) JSON snapshot of a namespace's active memories."""
+    return _dumps(_slim(namespace))
+
+
+def _capped(rows: list[dict], max_bytes: int) -> tuple[str, int]:
+    """Serialize rows to JSON no larger than max_bytes. If over, drop the lowest-priority
+    (oldest, non-pinned) entries FROM THE FILE until it fits — the DB still holds them all,
+    so one Drive file can never grow unbounded. Returns (json, dropped_count)."""
+    data = _dumps(rows)
+    if len(data.encode("utf-8")) <= max_bytes:
+        return data, 0
+    pinned = [r for r in rows if r.get("pinned")]
+    rest = [r for r in rows if not r.get("pinned")]
+    dropped = 0
+    while rest:
+        rest.pop()  # rows are priority-ordered, so the tail is the least important
+        dropped += 1
+        data = _dumps(pinned + rest)
+        if len(data.encode("utf-8")) <= max_bytes:
+            return data, dropped
+    # Even pinned-only exceeds the cap — keep it anyway (never drop core directives).
+    return _dumps(pinned), dropped
 
 
 # ---- local mirror ----
@@ -183,8 +211,14 @@ def run_all() -> dict:
     for ns in db.distinct_memory_namespaces():
         entry: dict = {}
         try:
-            data = snapshot(ns)
-            entry["count"] = len(json.loads(data))
+            rows = _slim(ns)
+            data, dropped = _capped(rows, settings.memory_backup_max_bytes)
+            entry["count"] = len(rows)
+            entry["bytes"] = len(data.encode("utf-8"))
+            if dropped:
+                entry["trimmed"] = dropped  # kept in DB; only omitted from the capped file
+                logger.warning("[backup] %s snapshot hit %d-byte cap — trimmed %d oldest entries from the file",
+                               ns, settings.memory_backup_max_bytes, dropped)
             entry["local"] = bool(_write_local(ns, data))
             if drive_up:
                 try:
@@ -220,6 +254,42 @@ def last_run() -> Optional[dict]:
         return json.loads(raw)
     except Exception:
         return None
+
+
+def purge(namespace: Optional[str] = None) -> dict:
+    """Reclaim Drive/local space by deleting the memory snapshot mirror files. This does
+    NOT touch the DB — Postgres remains the source of truth for memory; only the backup
+    copies are removed. namespace=None purges every namespace's snapshot. Drive files are
+    trashed (recoverable), local files are unlinked."""
+    result: dict = {"purged": [], "errors": []}
+    namespaces = [namespace] if namespace else db.distinct_memory_namespaces()
+
+    for ns in namespaces:
+        path = os.path.join(settings.memory_local_dir, f"allen-{ns}.json")
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+                result["purged"].append(f"local:{ns}")
+        except Exception as exc:
+            result["errors"].append(f"local:{ns}:{str(exc)[:120]}")
+
+    if tools_gdrive.ready():
+        account = _account()
+        try:
+            folder_id = resolve_memory_folder(account)
+        except Exception:
+            folder_id = settings.allen_memory_folder_id
+        for ns in namespaces:
+            try:
+                fid = _drive_find(account, folder_id, f"allen-{ns}.json")
+                if fid:
+                    tools_gdrive._delete_file({"file_id": fid, "account": account})
+                    result["purged"].append(f"drive:{ns}")
+            except Exception as exc:
+                result["errors"].append(f"drive:{ns}:{str(exc)[:120]}")
+
+    logger.info("[backup] purge complete — %s", result)
+    return result
 
 
 # ---- directory report (for /health) ----

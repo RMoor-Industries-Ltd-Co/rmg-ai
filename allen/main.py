@@ -374,6 +374,19 @@ async def whatsapp_inbound(request: Request) -> PlainTextResponse:
     return PlainTextResponse("<Response/>", media_type="text/xml")
 
 
+@app.post("/admin/memory/backup", dependencies=[Depends(require_admin)])
+def admin_memory_backup() -> dict:
+    """Run a memory backup immediately (normally hourly). Returns the per-namespace result."""
+    return backup.run_all()
+
+
+@app.post("/admin/memory/purge", dependencies=[Depends(require_admin)])
+def admin_memory_purge(namespace: str | None = None) -> dict:
+    """Delete memory snapshot mirror files (Drive + local) to reclaim space. The DB memory
+    itself is untouched. Omit namespace to purge all; the next backup regenerates them."""
+    return backup.purge(namespace)
+
+
 @app.get("/admin/replies", dependencies=[Depends(require_admin)])
 def admin_list_replies() -> dict:
     """ALLEN's canonical reply catalog — key, effective text, built-in default, and whether

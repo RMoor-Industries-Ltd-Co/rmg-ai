@@ -492,10 +492,24 @@ def respond_agentic(
     # The client already retries transient errors with backoff (llm.py). If the call still
     # fails, explain it gracefully from the canonical reply catalog instead of surfacing a
     # raw 500 — a calm transient-overload notice when retryable, else a generic failure.
-    try:
-        return _invoke()
-    except Exception as exc:
-        from . import replies
+    from . import replies
 
+    try:
+        result = _invoke()
+    except Exception as exc:
         logger.error("[agent] model call failed after retries: %s", exc)
         return replies.for_exception(exc)
+
+    # Self-correction: an empty/blank completion is a soft failure (dropped stream, all
+    # output consumed by tool rounds). Retry once before handing Rahm a blank turn.
+    if not (result or "").strip():
+        logger.warning("[agent] empty completion — retrying once")
+        try:
+            retry = _invoke()
+            if (retry or "").strip():
+                return retry
+        except Exception as exc:
+            logger.error("[agent] empty-retry failed: %s", exc)
+            return replies.for_exception(exc)
+        return replies.get("llm_failure_generic")
+    return result
