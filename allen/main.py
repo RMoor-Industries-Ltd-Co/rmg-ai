@@ -3,7 +3,7 @@ import logging
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import Response, PlainTextResponse
 
-from . import brands, chat, db, docs, emotion, meeting, metadata, scheduler, scripts, speech, topics, usage, web
+from . import backup, brands, chat, db, docs, emotion, meeting, metadata, scheduler, scripts, speech, topics, usage, web
 from .config import settings
 from .models import (
     ChatRequest,
@@ -52,6 +52,12 @@ def _startup() -> None:
         scheduler.start()
     except Exception as exc:  # a scheduler failure must not take down the whole app
         print(f"[allen] scheduler failed to start: {exc}")
+    # Kick an initial memory backup off the request path so /health shows directory + backup
+    # state right after boot instead of waiting an hour for the first scheduled run.
+    if settings.memory_backup_enabled and db.db_ready():
+        import threading
+
+        threading.Thread(target=backup.run_all, daemon=True).start()
 
 
 @app.on_event("shutdown")
@@ -87,7 +93,7 @@ def require_admin(x_admin_key: str | None = Header(default=None)) -> None:
 
 
 @app.get("/health", response_model=HealthResponse)
-def health() -> HealthResponse:
+def health(verify: bool = False) -> HealthResponse:
     # DB is probed for real (round-trips SELECT 1) rather than just checking the env var,
     # so a configured-but-unreachable Postgres shows as "unreachable" and degrades status.
     if not settings.database_url:
@@ -102,8 +108,22 @@ def health() -> HealthResponse:
         "db": db_status,
         "whatsapp": "ok" if settings.whatsapp_ready else "unconfigured",
     }
+    # ALLEN's Drive directory targets (memory vault + backups) + last backup result.
+    # ?verify=true live-probes each folder (a few Drive calls); default is cheap.
+    directories = None
+    last_backup = None
+    try:
+        directories = backup.directory_report(live=verify)
+        last_backup = backup.last_run()
+    except Exception as exc:  # health must never 500 on the extras
+        print(f"[allen] health directory report failed: {exc}")
     healthy = settings.llm_ready and db_status != "unreachable"
-    return HealthResponse(status="ok" if healthy else "degraded", checks=checks)
+    return HealthResponse(
+        status="ok" if healthy else "degraded",
+        checks=checks,
+        directories=directories,
+        last_memory_backup=last_backup,
+    )
 
 
 # ---- platform: identity, projects, namespaced memory ----

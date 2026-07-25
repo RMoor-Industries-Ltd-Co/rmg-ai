@@ -45,6 +45,20 @@ def _run_agent_rollup() -> None:
         logger.error("[scheduler] agent rollup failed: %s", exc)
 
 
+def _run_memory_backup() -> None:
+    from . import backup
+
+    logger.info("[scheduler] firing memory backup")
+    try:
+        res = backup.run_all()
+        logger.info(
+            "[scheduler] memory backup complete — ok=%s namespaces=%s",
+            res.get("ok"), list(res.get("namespaces", {}).keys()),
+        )
+    except Exception as exc:
+        logger.error("[scheduler] memory backup failed: %s", exc)
+
+
 def _run_reminders() -> None:
     from . import db, whatsapp
 
@@ -120,6 +134,19 @@ def start() -> None:
         logger.info("[scheduler] reminder poll scheduled every 5 minutes")
     else:
         logger.info("[scheduler] reminders not configured (needs WhatsApp + DATABASE_URL)")
+
+    if settings.memory_backup_enabled and settings.database_url:
+        _scheduler.add_job(
+            _run_memory_backup, "interval",
+            hours=max(1, settings.memory_backup_interval_hours), id="memory_backup",
+        )
+        jobs_added = True
+        logger.info(
+            "[scheduler] memory backup scheduled every %d hour(s)",
+            max(1, settings.memory_backup_interval_hours),
+        )
+    else:
+        logger.info("[scheduler] memory backup not configured (needs MEMORY_BACKUP_ENABLED + DATABASE_URL)")
 
     if not jobs_added:
         _scheduler = None

@@ -119,7 +119,8 @@ Never paste real secret values into chat or any committed file.
 | `allen/forms.py` | Virtual forms — dynamically-generated submit_form_* tools (schedule appointment, PIAAR initiative, business task, ...) so Claude's native required-param enforcement makes ALLEN ask instead of guess; ALLEN can define new ones himself |
 | `allen/tools_market_feed.py` | Market-feed scanner (yfinance, YouTube) for "hot instrument" signals — standalone, non-agentic, unrelated to `allie.py` despite historical naming |
 | `allen/feed_watch.py` | Feed-watch job — scans configured tickers, pushes signals to Thoth (axis-tekhen) |
-| `allen/scheduler.py` | Background scheduler — daily WhatsApp rich morning briefing + business report + feed-watch interval job + 6-hourly agent rollup + 5-minute reminder poll |
+| `allen/scheduler.py` | Background scheduler — daily WhatsApp rich morning briefing + business report + feed-watch interval job + 6-hourly agent rollup + 5-minute reminder poll + hourly memory backup |
+| `allen/backup.py` | Memory backup — hourly rolling JSON snapshot of each namespace's memory to a local mirror + the ALLEN/MEMORY Drive folder (self-heals the folder if missing); complements the older out-of-repo daily dated dumps in ALLEN-Backups. Surfaced under `/health` (`?verify=true` live-probes the folders) |
 | `allen/clock.py` | Injects the current date/time (America/New_York) into ALLEN's and ALLIE's system prompts — without it neither can compute a relative time like "remind me in 2 hours" |
 | `allen/tools_anpu.py` | Pull-only tool reading AXIS/Anpu's already-cached oversight reviews (axis-tekhen's own autonomous worker) — never triggers Anpu |
 | `allen/tools_thoth.py` | Pull-only tool reading AXIS/Thoth's already-cached candidate board — never triggers a rescan |

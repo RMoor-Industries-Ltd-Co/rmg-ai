@@ -74,6 +74,17 @@ class Settings(BaseSettings):
     atelier_thumbnail_approved_id: str = "1WNpoD8dFjEVN6qRAG-x0xGrnelTKWZSj"      # THUMBNAIL_DESIGN/APPROVED
     atelier_thumbnail_archived_id: str = "1GOLH9Kz_D_Q37rjQITfhs_-5curV9uFZ"      # THUMBNAIL_DESIGN/ARCHIVED
 
+    # ALLEN's own Google Drive home — memory vault + backup folders (rahm@rmasters.group Drive).
+    # The in-app hourly memory backup (allen/backup.py) keeps a rolling snapshot per namespace in
+    # ALLEN/MEMORY; the older out-of-repo daily cron writes dated dumps to ALLEN-Backups.
+    allen_folder_id: str = "1-3_8IPpM_KJtyfA34aQNHoaxrzQVrx6Y"          # "ALLEN" root
+    allen_memory_folder_id: str = "1C-iiKb1Q-k8wQnXvEa904kbvLulxlhaI"   # ALLEN/MEMORY (rolling in-app snapshots)
+    allen_backups_folder_id: str = "1AaHcdbNvh9vHJ7UiL_8x0aeMhR8Tp3ys"  # ALLEN-Backups (external daily dated dumps)
+    memory_backup_enabled: bool = True
+    memory_backup_interval_hours: int = 1
+    memory_backup_account: str = ""            # blank -> atelier_drive_account
+    memory_local_dir: str = "/tmp/allen-memory"  # local mirror; mount a volume here to make it durable
+
     # Operational data sources for ALLIE (project mgmt + knowledge base)
     clickup_api_token: str = ""
     clickup_team_id: str = ""

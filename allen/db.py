@@ -342,6 +342,15 @@ _RETRIEVAL_ORDER = (
 )
 
 
+def distinct_memory_namespaces() -> list[str]:
+    """Every namespace that currently holds memories — the backup job iterates these."""
+    if not db_ready():
+        return []
+    with _cursor() as cur:
+        cur.execute("SELECT DISTINCT namespace FROM memories ORDER BY namespace")
+        return [r["namespace"] for r in cur.fetchall()]
+
+
 def list_memories(namespace: str, include_inactive: bool = False) -> list[dict]:
     """Active, non-expired memories in retrieval-priority order. Set include_inactive=True
     for an audit view that also returns superseded/tombstoned/expired records."""
