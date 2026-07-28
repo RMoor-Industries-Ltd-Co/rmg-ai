@@ -278,7 +278,15 @@ def _read_file(args: dict) -> str:
         params = {"alt": "media", "supportsAllDrives": "true"}
     r = requests.get(url, headers=_h(account), params=params, timeout=30)
     r.raise_for_status()
-    return f"=== {meta.get('name', file_id)} ===\n{r.text[:8000]}"
+    # Cap the returned text so a huge file can't blow up the context, but keep it generous
+    # enough to read a full transcript (a long podcast transcript runs 10-90KB) rather than
+    # silently cutting off at a few thousand chars. Flag when truncation happened so ALLEN
+    # knows it saw only part of the document.
+    limit = settings.drive_read_max_chars
+    text = r.text
+    if len(text) > limit:
+        text = text[:limit] + f"\n\n… [truncated — showing first {limit:,} of {len(text):,} characters]"
+    return f"=== {meta.get('name', file_id)} ===\n{text}"
 
 
 def _create_folder(args: dict) -> str:

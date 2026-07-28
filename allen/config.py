@@ -89,6 +89,11 @@ class Settings(BaseSettings):
     # Drive file can never grow unbounded. The whole vault is also purgeable (see backup.purge).
     memory_backup_max_bytes: int = 5_000_000   # 5 MB
 
+    # Max characters returned by drive_read_file. Generous so ALLEN can interpret a full
+    # transcript (long podcast transcripts run 10-90KB) instead of the old 8k hard cut;
+    # truncation past this is flagged in the output so ALLEN knows it saw only part.
+    drive_read_max_chars: int = 60_000
+
     # Operational data sources for ALLIE (project mgmt + knowledge base)
     clickup_api_token: str = ""
     clickup_team_id: str = ""
