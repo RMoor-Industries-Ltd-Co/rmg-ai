@@ -12,17 +12,17 @@ _scheduler: BackgroundScheduler | None = None
 
 
 def _send_report() -> None:
-    from . import briefing, report, whatsapp
+    from . import briefing, whatsapp
 
-    logger.info("[scheduler] firing daily briefing + report")
+    # One agentic generation now produces the full morning brief (rich personal briefing +
+    # per-lane business rundown), replacing the old two-loop briefing+report pipeline that
+    # re-queried overlapping ClickUp/calendar data twice. whatsapp.send_message chunks the
+    # result across WhatsApp's 4096-char limit automatically.
+    logger.info("[scheduler] firing daily morning brief")
     try:
         whatsapp.send_message(briefing.build_daily_briefing())
     except Exception as exc:
-        logger.error("[scheduler] daily briefing failed: %s", exc)
-    try:
-        whatsapp.send_message(report.build_daily_report())
-    except Exception as exc:
-        logger.error("[scheduler] daily report failed: %s", exc)
+        logger.error("[scheduler] daily morning brief failed: %s", exc)
 
 
 def _run_feed_watch() -> None:
@@ -45,8 +45,22 @@ def _run_agent_rollup() -> None:
         logger.error("[scheduler] agent rollup failed: %s", exc)
 
 
+def _run_memory_backup() -> None:
+    from . import backup
+
+    logger.info("[scheduler] firing memory backup")
+    try:
+        res = backup.run_all()
+        logger.info(
+            "[scheduler] memory backup complete — ok=%s namespaces=%s",
+            res.get("ok"), list(res.get("namespaces", {}).keys()),
+        )
+    except Exception as exc:
+        logger.error("[scheduler] memory backup failed: %s", exc)
+
+
 def _run_reminders() -> None:
-    from . import db, whatsapp
+    from . import db, replies, whatsapp
 
     try:
         due = db.list_due_reminders()
@@ -55,11 +69,20 @@ def _run_reminders() -> None:
         return
     for r in due:
         try:
-            whatsapp.send_message(f"⏰ {r['message']}")
+            whatsapp.send_message(replies.get("reminder_prefix", message=r["message"]))
             db.mark_reminder_sent(r["id"])
             logger.info("[scheduler] sent reminder %s", r["id"])
         except Exception as exc:
             logger.error("[scheduler] failed to send reminder %s: %s", r["id"], exc)
+            # Count the failure; after a few tries the reminder is dead-lettered so a
+            # poison message can't spam the 5-minute poll forever once WhatsApp recovers.
+            try:
+                if db.record_reminder_failure(r["id"]):
+                    logger.error(
+                        "[scheduler] reminder %s dead-lettered after repeated send failures", r["id"]
+                    )
+            except Exception as exc2:
+                logger.error("[scheduler] could not record reminder failure %s: %s", r["id"], exc2)
 
 
 def start() -> None:
@@ -111,6 +134,19 @@ def start() -> None:
         logger.info("[scheduler] reminder poll scheduled every 5 minutes")
     else:
         logger.info("[scheduler] reminders not configured (needs WhatsApp + DATABASE_URL)")
+
+    if settings.memory_backup_enabled and settings.database_url:
+        _scheduler.add_job(
+            _run_memory_backup, "interval",
+            hours=max(1, settings.memory_backup_interval_hours), id="memory_backup",
+        )
+        jobs_added = True
+        logger.info(
+            "[scheduler] memory backup scheduled every %d hour(s)",
+            max(1, settings.memory_backup_interval_hours),
+        )
+    else:
+        logger.info("[scheduler] memory backup not configured (needs MEMORY_BACKUP_ENABLED + DATABASE_URL)")
 
     if not jobs_added:
         _scheduler = None

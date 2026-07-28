@@ -18,7 +18,20 @@ class Settings(BaseSettings):
 
     # LLM
     anthropic_api_key: str = ""
-    anthropic_model: str = "claude-sonnet-4-6"  # override via env; pick per-message in the console
+    # Default model for all lanes (scheduled jobs + interactive chat). Sonnet 5 at high
+    # effort handles the mechanical scheduled work (briefing/report/rollup) at near-Opus
+    # quality for a fraction of Opus per-token cost; Rahm can still escalate a single
+    # interactive message to Opus via the console's per-message model selector.
+    anthropic_model: str = "claude-sonnet-5"  # override via env; pick per-message in the console
+    # Reasoning-effort hint (low|medium|high|xhigh|max), sent as output_config.effort.
+    # Blank disables the hint entirely. Degrades gracefully if the model/SDK rejects it.
+    anthropic_effort: str = "high"
+    # Resilience: explicit per-request timeout (seconds) and automatic retry count on the
+    # Anthropic client. The SDK retries connection errors, 408/409/429, and >=500 with
+    # exponential backoff — raising max_retries hardens ALLEN against transient overload
+    # (429/529) instead of surfacing a one-shot failure to Rahm.
+    anthropic_timeout: float = 60.0
+    anthropic_max_retries: int = 4
 
     # Attachments — multi-file staging
     max_attach_files: int = 5        # max files per chat turn
@@ -34,7 +47,18 @@ class Settings(BaseSettings):
     gdrive_client_secret: str = ""
     gdrive_refresh_token: str = ""
     gdrive_scripts_folder_id: str = ""
-    gdrive_youtube_folder_id: str = ""  # Drive folder for YouTube audio/video/transcript saves
+    # SAVE target — where youtube_ingest WRITES new scrapes (audio/video/transcript). Mirrors
+    # MyTubeScript's GDRIVE_VIDEO_FOLDER_ID; keep the two roles distinct (save here, read below).
+    gdrive_video_folder_id: str = ""
+    # READ source — ALLEN's read-only YouTube transcript library (the "YOUTUBE SCRAPES" folder).
+    # ALLEN browses + reads transcripts here autonomously (youtube_list_transcripts / _read_transcript).
+    gdrive_youtube_folder_id: str = "146GJW5utzgeot65bOZnwkK0pGiQUjAUV"
+    # RMI Records Book vault — the store of FINAL copies of RMI governance/records-book documents.
+    # Must be shared with the ALLEN Drive identity (rahm@rmasters.group) for the closing workflow to reach it.
+    rmi_vault_folder_id: str = "13cgotDbQaEmjoZ6ajgbi0pfDFiPWswgF"
+    # AMG legal-agreements Drive folder — final copies of RMI Legal Agreements (RMI-LEG-*) are mirrored here
+    # during closing. Also must be shared with rahm@rmasters.group.
+    amg_legal_agreements_folder_id: str = "1NFuVCiSEi_vxY-3A_fSALRxZwHKgbSBg"
 
     # Atelier (Creator OS) — all folders in rahm@rmasters.group Drive
     atelier_drive_account: str = "rahm@rmasters.group"
@@ -55,6 +79,26 @@ class Settings(BaseSettings):
     atelier_thumbnail_approved_id: str = "1WNpoD8dFjEVN6qRAG-x0xGrnelTKWZSj"      # THUMBNAIL_DESIGN/APPROVED
     atelier_thumbnail_archived_id: str = "1GOLH9Kz_D_Q37rjQITfhs_-5curV9uFZ"      # THUMBNAIL_DESIGN/ARCHIVED
 
+    # ALLEN's own Google Drive home — memory vault + backup folders (rahm@rmasters.group Drive).
+    # The in-app hourly memory backup (allen/backup.py) keeps a rolling snapshot per namespace in
+    # ALLEN/MEMORY; the older out-of-repo daily cron writes dated dumps to ALLEN-Backups.
+    allen_folder_id: str = "1-3_8IPpM_KJtyfA34aQNHoaxrzQVrx6Y"          # "ALLEN" root
+    allen_memory_folder_id: str = "1C-iiKb1Q-k8wQnXvEa904kbvLulxlhaI"   # ALLEN/MEMORY (rolling in-app snapshots)
+    allen_backups_folder_id: str = "1AaHcdbNvh9vHJ7UiL_8x0aeMhR8Tp3ys"  # ALLEN-Backups (external daily dated dumps)
+    memory_backup_enabled: bool = True
+    memory_backup_interval_hours: int = 1
+    memory_backup_account: str = ""            # blank -> atelier_drive_account
+    memory_local_dir: str = "/tmp/allen-memory"  # local mirror; mount a volume here to make it durable
+    # Hard cap on a single namespace snapshot file. If exceeded, the lowest-priority (oldest,
+    # non-pinned) memories are trimmed FROM THE FILE ONLY — the DB keeps everything — so one
+    # Drive file can never grow unbounded. The whole vault is also purgeable (see backup.purge).
+    memory_backup_max_bytes: int = 5_000_000   # 5 MB
+
+    # Max characters returned by drive_read_file. Generous so ALLEN can interpret a full
+    # transcript (long podcast transcripts run 10-90KB) instead of the old 8k hard cut;
+    # truncation past this is flagged in the output so ALLEN knows it saw only part.
+    drive_read_max_chars: int = 60_000
+
     # Operational data sources for ALLIE (project mgmt + knowledge base)
     clickup_api_token: str = ""
     clickup_team_id: str = ""
@@ -66,8 +110,10 @@ class Settings(BaseSettings):
     github_app_id: str = ""
     github_app_installation_id: str = ""
     github_app_private_key: str = ""  # PEM; \n-escaped when set as a single-line env var
-    # AMG (Cappo's domain) is its own system; flip on when Cappo matures under ALLIE.
-    allie_amg_enabled: bool = False
+    # AMG (Cappo's domain): ALLIE now reaches AMG's ClickUp directly (Cappo has matured
+    # under her and remains her AMG execution agent for deeper work). On by default; set
+    # ALLIE_AMG_ENABLED=false to re-wall her from AMG if ever needed.
+    allie_amg_enabled: bool = True
 
     # Cappo — the AMG operations AI, reachable by ALLIE's delegate_to_cappo (keyed M2M call).
     cappo_agent_url: str = "https://cappo.apex-meridian-group.com/api/agent"
@@ -203,7 +249,8 @@ class Settings(BaseSettings):
 
     @property
     def youtube_ready(self) -> bool:
-        return self.docs_ready and bool(self.gdrive_youtube_folder_id)
+        # Ingest (save) readiness — needs Drive creds + a SAVE folder.
+        return self.docs_ready and bool(self.gdrive_video_folder_id)
 
     @property
     def feed_watch_ready(self) -> bool:

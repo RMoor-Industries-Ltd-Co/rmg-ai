@@ -1,6 +1,8 @@
-"""ClickUp tool client — ALLIE's (and ALLEN's) window into the project-management framework.
-Read-only: workspace structure, list tasks, read a task. `business_only` scopes ALLIE away from
-the PERSONAL SYSTEMS and AMG spaces (the gatekeeper boundary, enforced at the tool layer)."""
+"""ClickUp tool client — ALLEN's and ALLIE's window into the project-management framework.
+Read + write (see WRITE_TOOLS). `scope` gates which spaces a caller sees: ALLEN uses 'all'
+(personal + RMG/RMI + AMG — he's the overseer); ALLIE uses 'business' (RMG/RMI, plus AMG when
+allie_amg_enabled, now on by default). Only Rahm's PERSONAL spaces stay walled off from ALLIE —
+enforced at the tool layer by _in_scope."""
 
 from datetime import datetime, timezone
 
@@ -221,7 +223,8 @@ def _in_scope(name: str, scope: str) -> bool:
     if scope == "personal":
         return cat == "personal"
     if scope == "business":
-        # ALLIE: business spaces; AMG only once enabled (Cappo maturing under her)
+        # ALLIE: business spaces, plus AMG when allie_amg_enabled (now on by default —
+        # Cappo has matured under her and remains her deeper-AMG execution agent)
         return cat == "business" or (cat == "amg" and settings.allie_amg_enabled)
     return False
 
@@ -311,7 +314,8 @@ def get_clickup_milestones(list_id: str) -> list[dict]:
 
 
 def handle(name: str, args: dict, scope: str = "all") -> str:
-    """scope: 'all' | 'business' (RMG/RMI, ALLIE) | 'personal' (PERSONAL SYSTEMS, ALLEN direct)."""
+    """scope: 'all' (ALLEN direct — overseer, every space) | 'business' (RMG/RMI + AMG when
+    allie_amg_enabled, ALLIE) | 'personal' (PERSONAL SYSTEMS only)."""
     if not settings.clickup_ready:
         return "ClickUp is not configured."
     args = args or {}

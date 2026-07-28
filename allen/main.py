@@ -3,7 +3,7 @@ import logging
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import Response, PlainTextResponse
 
-from . import brands, chat, db, docs, emotion, meeting, metadata, scheduler, scripts, speech, topics, usage, web
+from . import backup, brands, chat, db, docs, emotion, meeting, metadata, replies, scheduler, scripts, speech, topics, usage, web
 from .config import settings
 from .models import (
     ChatRequest,
@@ -48,7 +48,16 @@ def _startup() -> None:
             db.seed_default()
         except Exception as exc:  # don't crash the brain if the DB is slow to come up
             print(f"[allen] DB init deferred: {exc}")
-    scheduler.start()
+    try:
+        scheduler.start()
+    except Exception as exc:  # a scheduler failure must not take down the whole app
+        print(f"[allen] scheduler failed to start: {exc}")
+    # Kick an initial memory backup off the request path so /health shows directory + backup
+    # state right after boot instead of waiting an hour for the first scheduled run.
+    if settings.memory_backup_enabled and db.db_ready():
+        import threading
+
+        threading.Thread(target=backup.run_all, daemon=True).start()
 
 
 @app.on_event("shutdown")
@@ -84,16 +93,37 @@ def require_admin(x_admin_key: str | None = Header(default=None)) -> None:
 
 
 @app.get("/health", response_model=HealthResponse)
-def health() -> HealthResponse:
+def health(verify: bool = False) -> HealthResponse:
+    # DB is probed for real (round-trips SELECT 1) rather than just checking the env var,
+    # so a configured-but-unreachable Postgres shows as "unreachable" and degrades status.
+    if not settings.database_url:
+        db_status = "unconfigured"
+    else:
+        db_status = "ok" if db.ping() else "unreachable"
     checks = {
         "llm": "ok" if settings.llm_ready else "unconfigured",
         "tts": "ok" if settings.tts_ready else "unconfigured",
         "stt": "ok" if settings.stt_ready else "unconfigured",
         "docs": "ok" if settings.docs_ready else "unconfigured",
-        "db": "ok" if settings.database_url else "unconfigured",
+        "db": db_status,
         "whatsapp": "ok" if settings.whatsapp_ready else "unconfigured",
     }
-    return HealthResponse(status="ok" if settings.llm_ready else "degraded", checks=checks)
+    # ALLEN's Drive directory targets (memory vault + backups) + last backup result.
+    # ?verify=true live-probes each folder (a few Drive calls); default is cheap.
+    directories = None
+    last_backup = None
+    try:
+        directories = backup.directory_report(live=verify)
+        last_backup = backup.last_run()
+    except Exception as exc:  # health must never 500 on the extras
+        print(f"[allen] health directory report failed: {exc}")
+    healthy = settings.llm_ready and db_status != "unreachable"
+    return HealthResponse(
+        status="ok" if healthy else "degraded",
+        checks=checks,
+        directories=directories,
+        last_memory_backup=last_backup,
+    )
 
 
 # ---- platform: identity, projects, namespaced memory ----
@@ -342,6 +372,40 @@ async def whatsapp_inbound(request: Request) -> PlainTextResponse:
 
     whatsapp.reply_async(body, _handle)
     return PlainTextResponse("<Response/>", media_type="text/xml")
+
+
+@app.post("/admin/memory/backup", dependencies=[Depends(require_admin)])
+def admin_memory_backup() -> dict:
+    """Run a memory backup immediately (normally hourly). Returns the per-namespace result."""
+    return backup.run_all()
+
+
+@app.post("/admin/memory/purge", dependencies=[Depends(require_admin)])
+def admin_memory_purge(namespace: str | None = None) -> dict:
+    """Delete memory snapshot mirror files (Drive + local) to reclaim space. The DB memory
+    itself is untouched. Omit namespace to purge all; the next backup regenerates them."""
+    return backup.purge(namespace)
+
+
+@app.get("/admin/replies", dependencies=[Depends(require_admin)])
+def admin_list_replies() -> dict:
+    """ALLEN's canonical reply catalog — key, effective text, built-in default, and whether
+    Rahm has overridden it. This is the source-of-truth list for his standard messages."""
+    return {"replies": replies.list_all()}
+
+
+@app.put("/admin/replies/{key}", dependencies=[Depends(require_admin)])
+async def admin_set_reply(key: str, request: Request) -> dict:
+    """Override a canonical reply's wording. Body: {"template": "..."}. Unknown keys are
+    rejected so a typo can't create a dead entry; pass "" to fall back to the default."""
+    if key not in replies.DEFAULTS or key == "_unknown":
+        raise HTTPException(404, f"unknown reply key '{key}'")
+    if not db.db_ready():
+        raise HTTPException(503, "DB not configured — reply overrides need Postgres")
+    payload = await request.json()
+    template = (payload or {}).get("template", "")
+    db.upsert_reply(key, template)
+    return {"ok": True, "key": key, "effective": replies.get(key) if template else replies.DEFAULTS[key]}
 
 
 @app.post("/whatsapp/test", dependencies=[Depends(require_admin)])

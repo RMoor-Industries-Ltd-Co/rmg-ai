@@ -10,9 +10,12 @@ Guidance for Claude (and humans) working in this repo. Read this first.
 A FastAPI (Python) app serving the ALLEN console UI, agentic chat, voice, and ALLIE.
 ALLIE is not a standalone process or a separate chat surface — she's an in-process
 sub-agent ALLEN delegates to (`allen/allie.py`, invoked from `allen/agent.py`),
-scoped to Rahm's BUSINESS worlds (RMG + RMI) and explicitly walled off from AMG,
-which is Cappo's domain one tier further down the chain (Rahm → ALLEN → ALLIE →
-Cappo). Deployed as a Docker container on a dedicated ALLEN server.
+scoped to Rahm's BUSINESS worlds (RMG + RMI). She now also reaches AMG's ClickUp
+directly (`allie_amg_enabled`, on by default), with Cappo remaining her deeper-AMG
+execution agent one tier down the chain (Rahm → ALLEN → ALLIE → Cappo). Only Rahm's
+PERSONAL systems stay walled off from her (the gatekeeper rule). ALLEN himself, as
+overseer, reaches every ClickUp space directly (personal + RMG/RMI + AMG). Deployed as
+a Docker container on a dedicated ALLEN server.
 
 ## Commands
 
@@ -106,7 +109,7 @@ Never paste real secret values into chat or any committed file.
 | `allen/main.py` | FastAPI app, mounts static files and router |
 | `allen/web.py` | ALLEN I VERSE console routes (served at `/`) |
 | `allen/agent.py` | ALLEN agentic loop + tool dispatch |
-| `allen/allie.py` | ALLIE — ALLEN's in-process business-ops sub-agent (RMG + RMI only; NOT AMG, that's Cappo's domain) |
+| `allen/allie.py` | ALLIE — ALLEN's in-process business-ops sub-agent (RMG + RMI, plus direct AMG ClickUp access; Cappo remains her deeper-AMG execution agent) |
 | `allen/static/console.html` | Full console UI (single file, no build step) |
 | `allen/tools_gdrive.py` | Google Drive read + write tools |
 | `allen/tools_calendar.py` | Google Calendar tools |
@@ -116,7 +119,9 @@ Never paste real secret values into chat or any committed file.
 | `allen/forms.py` | Virtual forms — dynamically-generated submit_form_* tools (schedule appointment, PIAAR initiative, business task, ...) so Claude's native required-param enforcement makes ALLEN ask instead of guess; ALLEN can define new ones himself |
 | `allen/tools_market_feed.py` | Market-feed scanner (yfinance, YouTube) for "hot instrument" signals — standalone, non-agentic, unrelated to `allie.py` despite historical naming |
 | `allen/feed_watch.py` | Feed-watch job — scans configured tickers, pushes signals to Thoth (axis-tekhen) |
-| `allen/scheduler.py` | Background scheduler — daily WhatsApp rich morning briefing + business report + feed-watch interval job + 6-hourly agent rollup + 5-minute reminder poll |
+| `allen/scheduler.py` | Background scheduler — daily WhatsApp rich morning briefing + business report + feed-watch interval job + 6-hourly agent rollup + 5-minute reminder poll + hourly memory backup |
+| `allen/backup.py` | Memory backup — hourly rolling JSON snapshot of each namespace's memory to a local mirror + the ALLEN/MEMORY Drive folder (self-heals the folder if missing); complements the older out-of-repo daily dated dumps in ALLEN-Backups. Surfaced under `/health` (`?verify=true` live-probes the folders) |
+| `allen/replies.py` | Canonical reply catalog — ALLEN's standard user-facing failure/notice messages (transient model-overload notice, generic error explanation, WhatsApp fallback, reminder formatting) with built-in defaults + Rahm-editable overrides in the `canonical_replies` table (via `/admin/replies`); `for_exception()` picks a calm transient-vs-generic message so a model blip explains itself instead of surfacing a raw 500 |
 | `allen/clock.py` | Injects the current date/time (America/New_York) into ALLEN's and ALLIE's system prompts — without it neither can compute a relative time like "remind me in 2 hours" |
 | `allen/tools_anpu.py` | Pull-only tool reading AXIS/Anpu's already-cached oversight reviews (axis-tekhen's own autonomous worker) — never triggers Anpu |
 | `allen/tools_thoth.py` | Pull-only tool reading AXIS/Thoth's already-cached candidate board — never triggers a rescan |

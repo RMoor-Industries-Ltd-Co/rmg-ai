@@ -1,4 +1,9 @@
-"""Daily morning brief — compiled by ALLEN's agentic layer and sent via WhatsApp."""
+"""Daily business-lane brief — compiled by ALLEN's agentic layer.
+
+DEPRECATED as a standalone scheduled job: its per-lane business content is now folded into
+`briefing.py`'s single morning-brief generation (one agentic loop instead of two that
+re-queried overlapping ClickUp/calendar data). `scheduler.py` no longer calls this. Kept
+importable for ad-hoc/manual use; remove once nothing references `build_daily_report`."""
 
 import logging
 from datetime import datetime

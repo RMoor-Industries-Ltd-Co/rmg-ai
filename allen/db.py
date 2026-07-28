@@ -17,6 +17,21 @@ def db_ready() -> bool:
     return bool(settings.database_url)
 
 
+def ping() -> bool:
+    """Real liveness check — actually round-trips a query to Postgres. Returns False
+    (never raises) when unconfigured or unreachable, so /health can report the truth
+    instead of just whether the env var is set."""
+    if not db_ready():
+        return False
+    try:
+        with _cursor() as cur:
+            cur.execute("SELECT 1")
+            cur.fetchone()
+        return True
+    except Exception:
+        return False
+
+
 def _get_pool():
     global _pool
     if _pool is None and settings.database_url:
@@ -207,9 +222,23 @@ def init_db() -> None:
                 message text NOT NULL,
                 due_at timestamptz NOT NULL,
                 sent boolean NOT NULL DEFAULT false,
+                attempts integer NOT NULL DEFAULT 0,
                 created_at timestamptz DEFAULT now()
             );
             CREATE INDEX IF NOT EXISTS reminders_due_idx ON reminders (due_at) WHERE NOT sent;
+            -- Older deployments predate the attempts column; add it idempotently so the
+            -- scheduler's dead-letter logic (record_reminder_failure) works after upgrade.
+            ALTER TABLE reminders ADD COLUMN IF NOT EXISTS attempts integer NOT NULL DEFAULT 0;
+
+            -- Canonical reply catalog (allen/replies.py). Rahm-editable overrides of ALLEN's
+            -- standard user-facing messages (transient-failure notices, error explanations,
+            -- reminder formatting). Absent rows fall back to the built-in defaults in code.
+            CREATE TABLE IF NOT EXISTS canonical_replies (
+                key text PRIMARY KEY,
+                template text NOT NULL,
+                updated_at timestamptz DEFAULT now(),
+                updated_by text
+            );
             """
         )
 
@@ -258,6 +287,34 @@ def set_config(key: str, value: str) -> None:
             "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()",
             (key, value),
         )
+
+
+def get_reply_override(key: str) -> Optional[str]:
+    """Rahm-set override for a canonical reply, or None to use the built-in default."""
+    if not db_ready():
+        return None
+    with _cursor() as cur:
+        cur.execute("SELECT template FROM canonical_replies WHERE key = %s", (key,))
+        row = cur.fetchone()
+        return row["template"] if row else None
+
+
+def upsert_reply(key: str, template: str, updated_by: str = "rahm") -> None:
+    with _cursor() as cur:
+        cur.execute(
+            "INSERT INTO canonical_replies (key, template, updated_by) VALUES (%s, %s, %s) "
+            "ON CONFLICT (key) DO UPDATE SET template = EXCLUDED.template, "
+            "updated_at = now(), updated_by = EXCLUDED.updated_by",
+            (key, template, updated_by),
+        )
+
+
+def list_reply_overrides() -> list[dict]:
+    if not db_ready():
+        return []
+    with _cursor() as cur:
+        cur.execute("SELECT key, template, updated_at, updated_by FROM canonical_replies ORDER BY key")
+        return list(cur.fetchall())
 
 
 def seed_default() -> None:
@@ -321,6 +378,15 @@ _RETRIEVAL_ORDER = (
     "WHEN 'commitment' THEN 3 WHEN 'sensitive' THEN 4 WHEN 'session' THEN 5 ELSE 6 END, "
     "(source = 'rahm_direct') DESC, created_at DESC"
 )
+
+
+def distinct_memory_namespaces() -> list[str]:
+    """Every namespace that currently holds memories — the backup job iterates these."""
+    if not db_ready():
+        return []
+    with _cursor() as cur:
+        cur.execute("SELECT DISTINCT namespace FROM memories ORDER BY namespace")
+        return [r["namespace"] for r in cur.fetchall()]
 
 
 def list_memories(namespace: str, include_inactive: bool = False) -> list[dict]:
@@ -802,6 +868,22 @@ def list_due_reminders() -> list[dict]:
 def mark_reminder_sent(reminder_id: str) -> None:
     with _cursor() as cur:
         cur.execute("UPDATE reminders SET sent = true WHERE id = %s", (reminder_id,))
+
+
+def record_reminder_failure(reminder_id: str, max_attempts: int = 3) -> bool:
+    """Count a failed send attempt. Once attempts reach max_attempts, mark the reminder
+    sent (dead-letter it) so the 5-minute poller stops retrying a poison message forever.
+    Returns True if this call gave up on the reminder."""
+    with _cursor() as cur:
+        cur.execute(
+            "UPDATE reminders SET attempts = attempts + 1 WHERE id = %s RETURNING attempts",
+            (reminder_id,),
+        )
+        row = cur.fetchone()
+        if row and row.get("attempts", 0) >= max_attempts:
+            cur.execute("UPDATE reminders SET sent = true WHERE id = %s", (reminder_id,))
+            return True
+    return False
 
 
 def list_upcoming_reminders(namespace: str, limit: int = 20) -> list[dict]:

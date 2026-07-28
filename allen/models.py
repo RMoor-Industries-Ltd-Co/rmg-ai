@@ -148,3 +148,7 @@ class HealthResponse(BaseModel):
     status: str
     service: str = "allen"
     checks: dict[str, str]
+    # ALLEN's Drive directory targets (memory vault + backups) and the last memory-backup
+    # run. directories are 'configured' by default; call /health?verify=true to live-probe them.
+    directories: Optional[dict] = None
+    last_memory_backup: Optional[dict] = None

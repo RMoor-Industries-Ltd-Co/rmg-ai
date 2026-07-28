@@ -6,6 +6,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import re
 import time
 from collections import OrderedDict
@@ -83,26 +84,49 @@ def _apply_memory_ops(namespace: str, reply: str) -> tuple[str, bool]:
     except Exception:
         return cleaned, False
     changed = False
+    failed = 0  # ops that raised even after one retry — ALLEN must not claim success on these
     for o in ops:
-        try:
-            op = o.get("op")
+        op = o.get("op")
+
+        def _apply() -> bool:
             if op == "add" and (o.get("content") or "").strip():
                 cls = classify.classify_memory(o["content"])
                 db.add_memory(
                     namespace, o["content"].strip(), cls["lane"], cls["silo"], source="allen",
                     unit=cls.get("unit"), memory_class=cls.get("memory_class"), sensitivity=cls.get("sensitivity"),
                 )
-                changed = True
-            elif op == "update" and o.get("id") and (o.get("content") or "").strip():
+                return True
+            if op == "update" and o.get("id") and (o.get("content") or "").strip():
                 # correction flow: supersede (keep audit trail), never silently overwrite
                 db.supersede_memory(namespace, o["id"], o["content"].strip())
-                changed = True
-            elif op == "delete" and o.get("id"):
+                return True
+            if op == "delete" and o.get("id"):
                 # deletion flow: tombstone (or hard-delete session-class) inside db.delete_memory
                 db.delete_memory(namespace, o["id"])
+                return True
+            return False
+
+        # Self-correction: a memory write that raises used to be swallowed silently, so ALLEN
+        # would tell Rahm "saved" while nothing persisted. Retry once, and if it still fails,
+        # count it so the caller can correct the false claim instead of hiding the loss.
+        try:
+            if _apply():
                 changed = True
-        except Exception:
-            continue
+        except Exception as exc:
+            logging.getLogger(__name__).error("[memory] op %s failed, retrying: %s", op, exc)
+            try:
+                if _apply():
+                    changed = True
+            except Exception as exc2:
+                logging.getLogger(__name__).error("[memory] op %s failed after retry: %s", op, exc2)
+                failed += 1
+    if failed:
+        cleaned = (
+            cleaned
+            + "\n\n⚠️ Heads up: I couldn't actually save "
+            + (f"{failed} of those to memory" if failed > 1 else "that to memory")
+            + " — the store rejected the write. Nothing was lost on your end; try again in a moment."
+        ).strip()
     return cleaned, changed
 
 

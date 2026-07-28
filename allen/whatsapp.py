@@ -66,6 +66,8 @@ def reply_async(message: str, handler: Callable[[str], str]) -> None:
             send_message(response)
         except Exception as exc:
             logger.error("[whatsapp] reply_async failed: %s", exc)
-            send_message("⚠️ ALLEN encountered an error processing that message.")
+            from . import replies
+
+            send_message(replies.get("whatsapp_error"))
 
     threading.Thread(target=_run, daemon=True).start()
