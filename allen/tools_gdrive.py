@@ -278,12 +278,15 @@ def _read_file(args: dict) -> str:
         params = {"alt": "media", "supportsAllDrives": "true"}
     r = requests.get(url, headers=_h(account), params=params, timeout=30)
     r.raise_for_status()
+    # Drive Doc/text exports are UTF-8; force it so requests doesn't fall back to latin-1 and
+    # mojibake em-dashes/smart-quotes throughout a transcript. Then drop the leading BOM.
+    r.encoding = "utf-8"
     # Cap the returned text so a huge file can't blow up the context, but keep it generous
     # enough to read a full transcript (a long podcast transcript runs 10-90KB) rather than
     # silently cutting off at a few thousand chars. Flag when truncation happened so ALLEN
     # knows it saw only part of the document.
     limit = settings.drive_read_max_chars
-    text = r.text
+    text = r.text.lstrip("﻿")  # drop the UTF-8 BOM Google prepends to Doc exports
     if len(text) > limit:
         text = text[:limit] + f"\n\n… [truncated — showing first {limit:,} of {len(text):,} characters]"
     return f"=== {meta.get('name', file_id)} ===\n{text}"

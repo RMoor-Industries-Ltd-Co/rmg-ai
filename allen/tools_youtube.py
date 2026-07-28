@@ -139,9 +139,9 @@ def _ingest(url: str, include_video: bool = False, whisper_model: str = "small")
 
     from .docs import create_drive_folder, upload_file_to_drive
 
-    root_folder_id = settings.gdrive_youtube_folder_id
+    root_folder_id = settings.gdrive_video_folder_id
     if not root_folder_id:
-        return "GDRIVE_YOUTUBE_FOLDER_ID is not configured — cannot save to Drive."
+        return "GDRIVE_VIDEO_FOLDER_ID (the save target) is not configured — cannot save to Drive."
     if not settings.docs_ready:
         return "Google Drive credentials are not configured (GDRIVE_CLIENT_ID / SECRET / REFRESH_TOKEN)."
 
@@ -307,17 +307,188 @@ def _ingest(url: str, include_video: bool = False, whisper_model: str = "small")
     return "\n".join(lines)
 
 
+# ---- READ side: ALLEN's autonomous transcript library ----
+#
+# The YOUTUBE SCRAPES read folder (settings.gdrive_youtube_folder_id) is a nested tree:
+#   <read root>/<CATEGORY>/<CHANNEL>/<video_YYYYMMDD_HHMMSS>/{transcript (Google Doc), ...}
+# (older scrapes also drop a title-named transcript Google Doc directly in the channel folder).
+# These helpers let ALLEN browse + read those transcripts himself, with no folder id from Rahm.
+
+from . import tools_gdrive  # noqa: E402  (read helpers reuse Drive token + read path)
+
+_FOLDER_MIME = "application/vnd.google-apps.folder"
+_DOC_MIME = "application/vnd.google-apps.document"
+
+READ_TOOLS = [
+    {
+        "name": "youtube_list_transcripts",
+        "description": (
+            "List the YouTube video transcripts in Rahm's read-only transcript library "
+            "(the YOUTUBE SCRAPES Drive folder MyTubeScript fills). Optionally filter by a "
+            "keyword in the video title / channel / category. Returns titles + file ids to pass "
+            "to youtube_read_transcript. Use this to discover what's been scraped."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Optional keyword to filter by title/channel/category."},
+                "limit": {"type": "integer", "description": "Max results (default 25)."},
+            },
+        },
+    },
+    {
+        "name": "youtube_read_transcript",
+        "description": (
+            "Read the FULL text of a scraped YouTube transcript from Rahm's library so you can "
+            "interpret, summarize, or quote it. Pass either file_id (from youtube_list_transcripts) "
+            "OR a query keyword matching the video title — with a query and no file_id the best/most-"
+            "recent match is read. Call this autonomously whenever Rahm asks about a scraped video."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "file_id": {"type": "string", "description": "Transcript file id from youtube_list_transcripts."},
+                "query": {"type": "string", "description": "Keyword matching the video title, when no file_id is given."},
+            },
+        },
+    },
+]
+
+
+def read_ready() -> bool:
+    """Read-library readiness — needs Drive access + the READ folder. Deliberately uses
+    tools_gdrive.ready() (legacy/unified OAuth) rather than docs_ready, since reading a
+    transcript doesn't need the scripts-folder that docs_ready also requires."""
+    return tools_gdrive.ready() and bool(settings.gdrive_youtube_folder_id)
+
+
+def _children(folder_id: str, headers: dict) -> list[dict]:
+    import requests
+
+    params = {
+        "q": f"'{folder_id}' in parents and trashed=false",
+        "fields": "files(id,name,mimeType,createdTime)",
+        "pageSize": 200,
+        "orderBy": "createdTime desc",
+        "supportsAllDrives": "true",
+        "includeItemsFromAllDrives": "true",
+    }
+    r = requests.get(f"{tools_gdrive.DRIVE_BASE}/files", headers=headers, params=params, timeout=30)
+    r.raise_for_status()
+    return r.json().get("files", [])
+
+
+def _is_transcript(f: dict) -> bool:
+    name = (f.get("name") or "").lower()
+    mime = f.get("mimeType")
+    if mime == _FOLDER_MIME:
+        return False
+    if "biblio" in name or "metadata" in name:
+        return False  # skip the sidecar files
+    if mime == _DOC_MIME:
+        return True
+    return name.endswith(".txt") and "transcript" in name
+
+
+def _label(f: dict, parent_name: str) -> str:
+    name = f.get("name") or ""
+    lbl = parent_name if name.lower().startswith("transcript") and parent_name else name
+    lbl = re.sub(r"_\d{8}_\d{6}$", "", lbl)  # strip MyTubeScript's _YYYYMMDD_HHMMSS stamp
+    return lbl.replace("_", " ").strip() or name
+
+
+def _walk_transcripts(root: str, query: Optional[str] = None, limit: int = 25, max_nodes: int = 500) -> list[dict]:
+    """Breadth-first walk of the read folder, collecting transcript files. Query filters the
+    leaf transcripts (folder traversal isn't pruned, since the title lives deep in the tree)."""
+    q_low = (query or "").lower().strip()
+    headers = tools_gdrive._h(None)  # mint the Drive token once, reuse across the whole walk
+    results: list[dict] = []
+    queue: list[tuple[str, str, str]] = [(root, "", "")]
+    visited = 0
+    while queue and len(results) < limit and visited < max_nodes:
+        fid, fname, path = queue.pop(0)
+        visited += 1
+        try:
+            kids = _children(fid, headers)
+        except Exception:
+            continue
+        for f in kids:
+            if f.get("mimeType") == _FOLDER_MIME:
+                queue.append((f["id"], f.get("name", ""), f"{path}/{f.get('name','')}".strip("/")))
+            elif _is_transcript(f):
+                label = _label(f, fname)
+                if q_low and q_low not in f"{label} {path} {f.get('name','')}".lower():
+                    continue
+                results.append({"label": label, "file_id": f["id"], "path": path, "created": f.get("createdTime", "")})
+    results.sort(key=lambda r: r["created"], reverse=True)
+    return results[:limit]
+
+
+def _list_transcripts(args: dict) -> str:
+    root = settings.gdrive_youtube_folder_id
+    query = args.get("query")
+    limit = max(1, min(int(args.get("limit", 25) or 25), 100))
+    items = _walk_transcripts(root, query, limit)
+    if not items:
+        return "No transcripts found" + (f" matching '{query}'." if query else " in the library.")
+    lines = [f"- {it['label']}  (id {it['file_id']}{'; ' + it['path'] if it['path'] else ''})" for it in items]
+    header = f"Transcripts matching '{query}':" if query else "Transcripts in the library:"
+    return header + "\n" + "\n".join(lines)
+
+
+def _read_transcript(args: dict) -> str:
+    fid = args.get("file_id")
+    if fid:
+        return tools_gdrive._read_file({"file_id": fid})
+    query = args.get("query")
+    if not query:
+        return "Provide a file_id (from youtube_list_transcripts) or a query keyword to pick a transcript."
+    items = _walk_transcripts(settings.gdrive_youtube_folder_id, query, limit=5)
+    if not items:
+        return f"No transcript found matching '{query}'."
+    top = items[0]
+    body = tools_gdrive._read_file({"file_id": top["file_id"]})
+    if len(items) > 1:
+        others = ", ".join(it["label"] for it in items[1:])
+        body += f"\n\n(Read '{top['label']}' — the best match. Others: {others}.)"
+    return body
+
+
+INGEST_TOOLS = TOOLS
+TOOLS = INGEST_TOOLS + READ_TOOLS  # exported set (all youtube tools)
+
+
+def available_tools() -> list[dict]:
+    """The youtube tools actually usable right now — ingest only if a save target is set,
+    read tools only if the read library is configured."""
+    out: list[dict] = []
+    if ready():
+        out += INGEST_TOOLS
+    if read_ready():
+        out += READ_TOOLS
+    return out
+
+
+def any_ready() -> bool:
+    return ready() or read_ready()
+
+
 def handle(name: str, args: dict) -> str:
-    if not settings.docs_ready:
-        return "Google Drive is not configured."
     if name == "youtube_ingest":
+        if not ready():
+            return "YouTube ingest isn't configured (needs Drive creds + GDRIVE_VIDEO_FOLDER_ID save target)."
         return _ingest(
             args.get("url", ""),
             args.get("include_video", False),
             args.get("whisper_model", "small"),
         )
+    if name in ("youtube_list_transcripts", "youtube_read_transcript"):
+        if not read_ready():
+            return "The YouTube transcript library isn't configured (needs Drive access + GDRIVE_YOUTUBE_FOLDER_ID)."
+        return _list_transcripts(args) if name == "youtube_list_transcripts" else _read_transcript(args)
     return f"(unknown youtube tool: {name})"
 
 
 def ready() -> bool:
-    return settings.docs_ready and bool(settings.gdrive_youtube_folder_id)
+    """Ingest (save) readiness."""
+    return settings.docs_ready and bool(settings.gdrive_video_folder_id)

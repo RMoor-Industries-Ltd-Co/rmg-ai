@@ -224,11 +224,14 @@ _CALENDAR_ONLY_NOTE = (
 
 _YOUTUBE_NOTE = (
     "\n"
-    "YOUTUBE — when Rahm pastes or mentions a YouTube URL (youtube.com/watch, youtu.be, or similar), "
-    "IMMEDIATELY call youtube_ingest on it without asking. Do not wait for him to say 'save this' or "
-    "'ingest this' — a YouTube link in chat is always an intent to capture it. After ingesting, tell him "
-    "concisely what was saved (title + Drive links). If you want ALLIE to research or summarize the "
-    "transcript, delegate to her after ingesting.\n"
+    "YOUTUBE — two capabilities, distinct folders. (1) SAVE: when Rahm pastes or mentions a YouTube URL "
+    "(youtube.com/watch, youtu.be, or similar), IMMEDIATELY call youtube_ingest on it without asking — a "
+    "link in chat is always an intent to capture it; the scrape is written to the save folder. After "
+    "ingesting, tell him concisely what was saved (title + Drive links). (2) READ: Rahm's already-scraped "
+    "transcript library (filled by MyTubeScript) is readable autonomously — when he asks about a scraped "
+    "video, what a channel said, or to summarize/quote a past scrape, call youtube_list_transcripts to find "
+    "it and youtube_read_transcript to read the full transcript yourself. You do NOT need a folder id or "
+    "link from him. Delegate to ALLIE for deeper research once you've read it.\n"
 )
 
 _DRIVE_NOTE = (
@@ -367,7 +370,7 @@ def respond_agentic(
         return full or cat in tool_scope
 
     calendar_on = tools_calendar.ready() and want("calendar")
-    youtube_on = tools_youtube.ready() and want("youtube")
+    youtube_on = tools_youtube.any_ready() and want("youtube")
     gdrive_on = tools_gdrive.ready() and want("gdrive")
     clickup_on = settings.clickup_ready and want("clickup")
     notion_on = settings.notion_ready and want("notion")
@@ -390,7 +393,7 @@ def respond_agentic(
     if web_on:
         tools += tools_web.TOOLS  # web fetch (full interactive set)
     if youtube_on:
-        tools += tools_youtube.TOOLS  # YouTube ingest → Drive
+        tools += tools_youtube.available_tools()  # ingest (save) + transcript library (read)
     if gdrive_on:
         tools += tools_gdrive.TOOLS  # Drive read + CRUD (TOOLS already includes WRITE_TOOLS)
     if github_on:

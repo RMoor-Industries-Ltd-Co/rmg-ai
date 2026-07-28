@@ -47,7 +47,12 @@ class Settings(BaseSettings):
     gdrive_client_secret: str = ""
     gdrive_refresh_token: str = ""
     gdrive_scripts_folder_id: str = ""
-    gdrive_youtube_folder_id: str = ""  # Drive folder for YouTube audio/video/transcript saves
+    # SAVE target — where youtube_ingest WRITES new scrapes (audio/video/transcript). Mirrors
+    # MyTubeScript's GDRIVE_VIDEO_FOLDER_ID; keep the two roles distinct (save here, read below).
+    gdrive_video_folder_id: str = ""
+    # READ source — ALLEN's read-only YouTube transcript library (the "YOUTUBE SCRAPES" folder).
+    # ALLEN browses + reads transcripts here autonomously (youtube_list_transcripts / _read_transcript).
+    gdrive_youtube_folder_id: str = "146GJW5utzgeot65bOZnwkK0pGiQUjAUV"
     # RMI Records Book vault — the store of FINAL copies of RMI governance/records-book documents.
     # Must be shared with the ALLEN Drive identity (rahm@rmasters.group) for the closing workflow to reach it.
     rmi_vault_folder_id: str = "13cgotDbQaEmjoZ6ajgbi0pfDFiPWswgF"
@@ -244,7 +249,8 @@ class Settings(BaseSettings):
 
     @property
     def youtube_ready(self) -> bool:
-        return self.docs_ready and bool(self.gdrive_youtube_folder_id)
+        # Ingest (save) readiness — needs Drive creds + a SAVE folder.
+        return self.docs_ready and bool(self.gdrive_video_folder_id)
 
     @property
     def feed_watch_ready(self) -> bool:
