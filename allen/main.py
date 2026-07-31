@@ -3,7 +3,7 @@ import logging
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import Response, PlainTextResponse
 
-from . import backup, brands, chat, db, docs, emotion, meeting, metadata, replies, scheduler, scripts, speech, topics, usage, web
+from . import backup, brands, chat, db, docs, emotion, logs, meeting, metadata, replies, scheduler, scripts, speech, topics, usage, web
 from .config import settings
 from .models import (
     ChatRequest,
@@ -385,6 +385,19 @@ def admin_memory_purge(namespace: str | None = None) -> dict:
     """Delete memory snapshot mirror files (Drive + local) to reclaim space. The DB memory
     itself is untouched. Omit namespace to purge all; the next backup regenerates them."""
     return backup.purge(namespace)
+
+
+@app.get("/admin/errors", dependencies=[Depends(require_admin)])
+def admin_errors(limit: int = 50, namespace: str | None = None) -> dict:
+    """Read the onboard fault log (most recent first). This is what Rahm reads when ALLEN
+    reports 'I've written it to the error log'."""
+    return {"errors": db.list_errors(namespace, limit), "last_offload": logs.last_run()}
+
+
+@app.post("/admin/errors/offload", dependencies=[Depends(require_admin)])
+def admin_errors_offload() -> dict:
+    """Off-load pending faults to the ALLEN/LOGS Drive folder now (normally hourly)."""
+    return logs.offload()
 
 
 @app.get("/admin/replies", dependencies=[Depends(require_admin)])

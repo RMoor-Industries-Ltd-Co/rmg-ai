@@ -239,6 +239,22 @@ def init_db() -> None:
                 updated_at timestamptz DEFAULT now(),
                 updated_by text
             );
+
+            -- Onboard fault log (allen/logs.py). ALLEN records faults here — a tool that errored,
+            -- an action he couldn't complete, a claim he had to walk back — and a scheduler job
+            -- off-loads rows to the ALLEN/LOGS Drive folder so Rahm can request a log read.
+            CREATE TABLE IF NOT EXISTS error_log (
+                id text PRIMARY KEY,
+                namespace text NOT NULL,
+                source text,
+                summary text NOT NULL,
+                detail text,
+                severity text NOT NULL DEFAULT 'error',
+                offloaded boolean NOT NULL DEFAULT false,
+                created_at timestamptz DEFAULT now()
+            );
+            CREATE INDEX IF NOT EXISTS error_log_ns_idx ON error_log (namespace, created_at DESC);
+            CREATE INDEX IF NOT EXISTS error_log_offload_idx ON error_log (offloaded) WHERE NOT offloaded;
             """
         )
 
@@ -315,6 +331,51 @@ def list_reply_overrides() -> list[dict]:
     with _cursor() as cur:
         cur.execute("SELECT key, template, updated_at, updated_by FROM canonical_replies ORDER BY key")
         return list(cur.fetchall())
+
+
+def add_error(namespace: str, source: str, summary: str, detail: str = "", severity: str = "error") -> None:
+    """Record a fault in the onboard error log. NEVER raises — it runs on error paths, so a
+    logging failure must not mask or replace the original problem (it just prints and moves on)."""
+    if not db_ready() or not (summary or "").strip():
+        return
+    try:
+        eid = f"err-{int(time.time() * 1000)}-{secrets.randbelow(100000)}"
+        with _cursor() as cur:
+            cur.execute(
+                "INSERT INTO error_log (id, namespace, source, summary, detail, severity) "
+                "VALUES (%s, %s, %s, %s, %s, %s)",
+                (eid, namespace, (source or "")[:120], summary[:500], (detail or "")[:4000], severity[:20]),
+            )
+    except Exception as exc:  # last-resort: never let logging throw
+        print(f"[db] add_error failed: {exc}")
+
+
+def list_errors(namespace: Optional[str] = None, limit: int = 50, only_unoffloaded: bool = False) -> list[dict]:
+    if not db_ready():
+        return []
+    where = []
+    params: list = []
+    if namespace:
+        where.append("namespace = %s")
+        params.append(namespace)
+    if only_unoffloaded:
+        where.append("NOT offloaded")
+    clause = ("WHERE " + " AND ".join(where)) if where else ""
+    params.append(max(1, min(int(limit or 50), 500)))
+    with _cursor() as cur:
+        cur.execute(
+            f"SELECT id, namespace, source, summary, detail, severity, offloaded, created_at "
+            f"FROM error_log {clause} ORDER BY created_at DESC LIMIT %s",
+            tuple(params),
+        )
+        return list(cur.fetchall())
+
+
+def mark_errors_offloaded(ids: list[str]) -> None:
+    if not ids:
+        return
+    with _cursor() as cur:
+        cur.execute("UPDATE error_log SET offloaded = true WHERE id = ANY(%s)", (list(ids),))
 
 
 def seed_default() -> None:

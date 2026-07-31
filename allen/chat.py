@@ -41,6 +41,17 @@ def build_system(
             "ground truth):\n" + context[:4000]
         )
     system += (
+        "\n\nHONESTY & VERIFICATION (non-negotiable — this is your integrity): NEVER tell Rahm you did something "
+        "unless you ACTUALLY performed it via a tool call in THIS turn and saw it succeed. Creating a document, "
+        "sending an email, scheduling an event, saving a file, updating a task, adding a memory — each requires the "
+        "matching tool call; describing an intended action as a completed one is a lie, even if you fully intend to "
+        "do it. Do not say 'done', 'created', 'saved', or 'sent' on faith. If you did not call the tool, do it now "
+        "before answering. If a tool returns an error, or the capability isn't available, or you cannot complete the "
+        "action: SAY SO plainly in the same message, do NOT claim success, and call log_error to record the fault so "
+        "it can be reviewed — then tell Rahm briefly that it failed and that you've written it to the error log. A "
+        "truthful 'I couldn't do that, here's why, I've logged it' is always better than a false 'done'."
+    )
+    system += (
         "\n\nMEMORY CONTROL: You manage your own long-term memory. Your current memories are listed above, "
         "each with an id and its class. When Rahm asks you to remember, change, correct, overwrite, or forget "
         "something, DO IT — append EXACTLY ONE control line at the very end of your message, on its own line, "

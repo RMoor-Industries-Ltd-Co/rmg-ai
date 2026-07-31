@@ -115,7 +115,12 @@ WRITE_TOOLS = [
     },
     {
         "name": "drive_create_file",
-        "description": "Create a new text file in Google Drive with the given content.",
+        "description": (
+            "Create a new file in Google Drive with the given content. For a NATIVE Google Doc "
+            "(what Rahm means by 'create a document in Google Docs'), pass mime_type "
+            "'application/vnd.google-apps.document' — the content is converted into a real editable "
+            "Doc. Omit mime_type (or use 'text/plain') for a plain text file. Returns the file's link."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -311,9 +316,16 @@ def _create_folder(args: dict) -> str:
 
 def _create_file(args: dict) -> str:
     account = args.get("account")
-    mime = args.get("mime_type", "text/plain")
+    requested = args.get("mime_type", "text/plain")
+    # To create a NATIVE Google Doc (or Sheet/Slides), Drive needs the google-apps type in the
+    # file METADATA while the uploaded media is plain text it converts from. Passing the
+    # google-apps type as the media content-type would just make an opaque binary, so split them.
+    is_google_native = requested.startswith("application/vnd.google-apps.")
+    mime = "text/plain" if is_google_native else requested
     content = args["content"].encode("utf-8")
     metadata: dict = {"name": args["name"]}
+    if is_google_native:
+        metadata["mimeType"] = requested
     if args.get("parent_id"):
         metadata["parents"] = [args["parent_id"]]
     meta_bytes = json.dumps(metadata).encode("utf-8")

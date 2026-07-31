@@ -59,6 +59,17 @@ def _run_memory_backup() -> None:
         logger.error("[scheduler] memory backup failed: %s", exc)
 
 
+def _run_error_offload() -> None:
+    from . import logs
+
+    logger.info("[scheduler] firing error-log offload")
+    try:
+        res = logs.offload()
+        logger.info("[scheduler] error offload — ok=%s namespaces=%s", res.get("ok"), list(res.get("namespaces", {}).keys()))
+    except Exception as exc:
+        logger.error("[scheduler] error offload failed: %s", exc)
+
+
 def _run_reminders() -> None:
     from . import db, replies, whatsapp
 
@@ -147,6 +158,11 @@ def start() -> None:
         )
     else:
         logger.info("[scheduler] memory backup not configured (needs MEMORY_BACKUP_ENABLED + DATABASE_URL)")
+
+    if settings.database_url:
+        _scheduler.add_job(_run_error_offload, "interval", hours=1, id="error_offload")
+        jobs_added = True
+        logger.info("[scheduler] error-log offload scheduled hourly")
 
     if not jobs_added:
         _scheduler = None

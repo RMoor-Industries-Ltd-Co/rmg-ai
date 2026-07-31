@@ -114,6 +114,35 @@ ALLEN_TOOLS = [
         ),
         "input_schema": {"type": "object", "properties": {}},
     },
+    {
+        "name": "log_error",
+        "description": (
+            "Record a fault to the onboard error log. Call this WHENEVER you hit a fault — a tool "
+            "returned an error, an action you couldn't complete, or a claim you had to walk back. "
+            "Always pair it with telling Rahm plainly that it failed and that you've logged it; never "
+            "use it to paper over a false 'done'."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "summary": {"type": "string", "description": "One-line description of the fault."},
+                "detail": {"type": "string", "description": "Fuller context: what you tried, the error text, inputs."},
+                "source": {"type": "string", "description": "Where it happened (tool name / area), e.g. 'drive_create_file'."},
+            },
+            "required": ["summary"],
+        },
+    },
+    {
+        "name": "read_error_log",
+        "description": (
+            "Read the most recent entries from the onboard error log. Use when Rahm asks what's gone "
+            "wrong, to review faults, or to check whether a recurring issue is logged."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"limit": {"type": "integer", "description": "How many recent entries (default 30)."}},
+        },
+    },
 ]
 
 # Gated on settings.whatsapp_ready and settings.database_url (see respond_agentic) rather
@@ -339,6 +368,35 @@ def _build_delegation_note(
     return note
 
 
+# Substrings that mark a fault-shaped tool RESULT (tools return error strings, not exceptions).
+# Matched only against the head of the result to avoid flagging legit content that mentions "error".
+_FAULT_MARKERS = (
+    "api error", "call failed", "isn't configured", "is not configured", "not configured",
+    "(unknown ", "ingest failed", "could not create", "could not reach", "failed:", "error code",
+    "denied", "invalid or missing", "no refresh token", "not connected", "isn't connected",
+)
+
+
+def _looks_like_fault(res: str) -> bool:
+    if not res:
+        return False
+    head = res[:200].lower()
+    return any(m in head for m in _FAULT_MARKERS)
+
+
+def _format_errors(rows: list) -> str:
+    if not rows:
+        return "The error log is empty — no faults recorded."
+    lines = ["Recent faults (most recent first):"]
+    for e in rows:
+        when = str(e.get("created_at"))[:19]
+        src = e.get("source") or "?"
+        detail = (e.get("detail") or "").strip()
+        extra = f" — {detail[:160]}" if detail else ""
+        lines.append(f"- [{when}] {src}: {e.get('summary')}{extra}")
+    return "\n".join(lines)
+
+
 def respond_agentic(
     message: str,
     history: Optional[list[dict]],
@@ -415,8 +473,12 @@ def respond_agentic(
     system = chat.build_system(None, None, context) + delegation_note
     messages = [{"role": "user", "content": chat.build_user(message, history)}]
 
-    def runner(name: str, inp: dict) -> str:
-        inp = inp or {}
+    def _dispatch(name: str, inp: dict) -> str:
+        if name == "log_error":
+            db.add_error(namespace, inp.get("source") or "allen", inp.get("summary", ""), inp.get("detail", ""))
+            return "Fault recorded to the error log."
+        if name == "read_error_log":
+            return _format_errors(db.list_errors(namespace, inp.get("limit", 30)))
         if name == "delegate_to_allie":
             task = inp.get("task", "")
             res = allie.run(task, namespace)
@@ -472,6 +534,23 @@ def respond_agentic(
             db.add_audit(namespace, "allen", name, json.dumps(inp), res)
             return res
         return f"(unknown tool: {name})"
+
+    def runner(name: str, inp: dict) -> str:
+        # Wrap every tool call: a raised exception or a fault-shaped result is recorded to the
+        # onboard error log automatically, so a fault leaves a trail even if the model glosses
+        # over it. The HONESTY directive tells ALLEN to also surface it and never claim success.
+        inp = inp or {}
+        try:
+            res = _dispatch(name, inp)
+        except Exception as exc:
+            logger.error("[agent] tool %s raised: %s", name, exc)
+            db.add_error(namespace, name, f"tool {name} raised an exception", f"{type(exc).__name__}: {exc}")
+            from . import replies
+
+            return replies.get("tool_error_generic", error=str(exc)[:200])
+        if name not in ("log_error", "read_error_log", "review_activity") and _looks_like_fault(res):
+            db.add_error(namespace, name, f"tool {name} reported a fault", (res or "")[:1000])
+        return res
 
     llm = get_llm()
 

@@ -85,6 +85,7 @@ class Settings(BaseSettings):
     allen_folder_id: str = "1-3_8IPpM_KJtyfA34aQNHoaxrzQVrx6Y"          # "ALLEN" root
     allen_memory_folder_id: str = "1C-iiKb1Q-k8wQnXvEa904kbvLulxlhaI"   # ALLEN/MEMORY (rolling in-app snapshots)
     allen_backups_folder_id: str = "1AaHcdbNvh9vHJ7UiL_8x0aeMhR8Tp3ys"  # ALLEN-Backups (external daily dated dumps)
+    allen_logs_folder_id: str = ""  # ALLEN/LOGS — fault-log off-load target; auto-created under the ALLEN root if blank
     memory_backup_enabled: bool = True
     memory_backup_interval_hours: int = 1
     memory_backup_account: str = ""            # blank -> atelier_drive_account

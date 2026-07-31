@@ -42,6 +42,10 @@ DEFAULTS: dict[str, str] = {
         "now. Try again shortly and I'll have everything back."
     ),
     "tool_error_generic": "That action didn't complete: {error}",
+    "fault_logged": (
+        "⚠️ I hit a fault on that and couldn't complete it, so I did NOT mark it done. I've written it to the "
+        "error log for review — ask me to read the error log if you want the detail."
+    ),
     "_unknown": "Something went wrong, and I've logged it.",
 }
 
