@@ -98,6 +98,13 @@ TOOLS = [
 WRITE_NAMES = {"gmail_send", "gmail_reply", "gmail_archive"}
 
 
+def ready() -> bool:
+    """Gmail is usable when the OAuth client is configured AND at least one Google account has
+    a stored token. (An account authorized via the calendar-only flow may still lack the Gmail
+    scope — a send then returns a clear 403 that ALLEN surfaces honestly, prompting re-auth.)"""
+    return google_auth.oauth_ready() and bool(google_auth.connected_accounts())
+
+
 def _h(account: str) -> dict:
     return google_auth.auth_headers(account)
 
