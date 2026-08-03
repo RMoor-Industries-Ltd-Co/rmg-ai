@@ -397,6 +397,40 @@ def _format_errors(rows: list) -> str:
     return "\n".join(lines)
 
 
+# Phrases that assert a COMPLETED side-effecting action (not a read/answer). Used only to catch
+# the confabulation case: a reply claiming one of these while NO action tool fired this turn.
+_ACTION_CLAIM_MARKERS = (
+    "i've created", "i created", "i have created", "i've made", "i made the",
+    "i've scheduled", "i scheduled", "i've sent", "i sent", "i've emailed", "i emailed",
+    "i've added", "i added", "i've saved", "i saved", "saved it",
+    "i've updated", "i updated", "i've posted", "i posted",
+    "i've booked", "i booked", "i've uploaded", "i uploaded", "i've moved", "i moved",
+    "i've deleted", "i deleted", "i've set up", "i set it up", "i've set it up",
+    "it's created", "it's scheduled", "it's saved", "it's been created", "it's been scheduled",
+    "it's been sent", "all done", "task complete", "task is complete", "here you go", "all set",
+)
+
+
+def _claims_completed_action(text: str) -> bool:
+    """True if the reply asserts it finished a side-effecting action. Errs toward catching the
+    bare 'Done.' pattern (the exact confabulation) — a false positive only costs one self-check."""
+    if not text:
+        return False
+    t = text.strip().lower()
+    if t.startswith("done"):  # "Done.", "Done!", "Done — here's the link", ...
+        return True
+    return any(m in t for m in _ACTION_CLAIM_MARKERS)
+
+
+_SELF_CHECK_NUDGE = (
+    "SELF-CHECK — this matters to Rahm: your previous reply told him an action was completed, but "
+    "you did NOT call any tool that actually performs it, so it did NOT happen. Do not string him "
+    "along or restate a false 'done'. If you can do it now, CALL THE TOOL and actually do it, then "
+    "reply with the real result (the real link/id/confirmation). If you genuinely cannot, tell him "
+    "plainly that you did not do it and why, and call log_error. Execute or admit — nothing between."
+)
+
+
 def respond_agentic(
     message: str,
     history: Optional[list[dict]],
@@ -535,6 +569,26 @@ def respond_agentic(
             return res
         return f"(unknown tool: {name})"
 
+    # Which tools constitute actually DOING something (a write / side effect) vs a read. Used by
+    # the confabulation guard below to tell "he did it" from "he only said he did."
+    _write_names = (
+        set(getattr(tools_gdrive, "WRITE_NAMES", set()))
+        | set(getattr(tools_calendar, "WRITE_NAMES", set()))
+        | set(getattr(tools_clickup, "WRITE_NAMES", set()))
+        | set(getattr(tools_github, "WRITE_NAMES", set()))
+    )
+    _action_singletons = {"delegate_to_allie", "send_alert", "schedule_reminder", "cancel_reminder",
+                          "youtube_ingest", "define_virtual_form"}
+    _turn = {"actions": 0}
+
+    def _is_action(name: str) -> bool:
+        return (
+            name in _write_names
+            or name in _action_singletons
+            or name.startswith("submit_form_")
+            or (name.startswith("notion_") and any(k in name for k in ("create", "update", "append", "add", "delete", "move")))
+        )
+
     def runner(name: str, inp: dict) -> str:
         # Wrap every tool call: a raised exception or a fault-shaped result is recorded to the
         # onboard error log automatically, so a fault leaves a trail even if the model glosses
@@ -550,6 +604,8 @@ def respond_agentic(
             return replies.get("tool_error_generic", error=str(exc)[:200])
         if name not in ("log_error", "read_error_log", "review_activity") and _looks_like_fault(res):
             db.add_error(namespace, name, f"tool {name} reported a fault", (res or "")[:1000])
+        elif _is_action(name):
+            _turn["actions"] += 1  # a real side effect happened this turn
         return res
 
     llm = get_llm()
@@ -594,4 +650,33 @@ def respond_agentic(
             logger.error("[agent] empty-retry failed: %s", exc)
             return replies.for_exception(exc)
         return replies.get("llm_failure_generic")
+
+    # CONFABULATION GUARD (enforcement, not just the prompt): if the reply claims a completed
+    # action but NO action tool actually fired this turn, force one self-check pass — ALLEN either
+    # executes it for real now or states plainly he didn't. He can't give the impression of
+    # performing without performing. Logged so the pattern is auditable.
+    if _turn["actions"] == 0 and _claims_completed_action(result):
+        logger.warning("[agent] claim-without-action detected — forcing self-check pass")
+        try:
+            db.add_error(
+                namespace, "verification",
+                "reply claimed a completed action with no tool call — self-check forced",
+                (result or "")[:500],
+            )
+        except Exception:
+            pass
+        followup = messages + [
+            {"role": "assistant", "content": result},
+            {"role": "user", "content": _SELF_CHECK_NUDGE},
+        ]
+        try:
+            corrected = llm.run_agent(
+                system, followup, tools, runner, max_rounds=6, max_tokens=max_tokens,
+                namespace=namespace, feature="allen_agent",
+            )
+            if (corrected or "").strip():
+                return corrected
+        except Exception as exc:
+            logger.error("[agent] self-check pass failed: %s", exc)
+
     return result
