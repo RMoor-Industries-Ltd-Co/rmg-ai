@@ -224,12 +224,30 @@ TOOLS = _READ_TOOLS + WRITE_TOOLS
 WRITE_NAMES = {t["name"] for t in WRITE_TOOLS}
 
 
+_DRIVE_Q_OPERATORS = ("contains", "=", "!=", "<", ">", " in parents", "mimetype", "fulltext",
+                      "modifiedtime", "createdtime", "name ", " and ", " or ", "trashed", "owner", "starred")
+
+
+def _normalize_query(raw: str) -> str:
+    """ALLEN often passes a plain keyword ('peptides'), but Drive's `q` needs a real clause —
+    a bare keyword builds `peptides and trashed=false`, which Drive rejects with 400 Invalid
+    Value (this was faulting on every keyword search). If the query isn't already Drive `q`
+    syntax, wrap it as a name/fullText contains so plain keywords Just Work."""
+    q = (raw or "").strip()
+    if not q:
+        return ""
+    if any(op in q.lower() for op in _DRIVE_Q_OPERATORS):
+        return q  # already looks like Drive query syntax — pass through
+    esc = q.replace("\\", "\\\\").replace("'", "\\'")
+    return f"(name contains '{esc}' or fullText contains '{esc}')"
+
+
 def _search(args: dict) -> str:
     account = args.get("account")
-    q = args["query"]
+    q = _normalize_query(args.get("query", ""))
     if args.get("folder_id"):
-        q = f"'{args['folder_id']}' in parents and ({q})"
-    q += " and trashed=false"
+        q = f"'{args['folder_id']}' in parents" + (f" and ({q})" if q else "")
+    q = (q + " and trashed=false") if q else "trashed=false"
     params = {
         "q": q,
         "fields": "files(id,name,mimeType,modifiedTime)",

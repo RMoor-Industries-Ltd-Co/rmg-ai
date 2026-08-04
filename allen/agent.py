@@ -270,6 +270,17 @@ _DRIVE_NOTE = (
     "organize, save, or manage files directly. Write ops are audit-logged.\n"
 )
 
+_GMAIL_NOTE = (
+    "\n"
+    "EMAIL — you have real Gmail access across Rahm's accounts: gmail_search and gmail_read to triage the "
+    "inbox, gmail_send to send a new email, gmail_reply to reply in a thread, gmail_archive to clear one. "
+    "When Rahm asks you to email someone, DO IT with gmail_send and report the real result — never say "
+    "'sent' unless the tool returned success. Specify the account to send FROM when it matters (default is "
+    "rahmind.consulting@rmoorind.com; use rahm@rmasters.group for his primary). If a send comes back needing "
+    "authorization (a scope/403 error), tell him plainly it needs the one-time Gmail authorization — don't "
+    "fake a confirmation.\n"
+)
+
 _RMI_VAULT_NOTE_TMPL = (
     "\n"
     "RMI RECORDS BOOK — CLOSING WORKFLOW. Rahm periodically tells you a Records Book document is complete "
@@ -334,7 +345,8 @@ _FORMS_NOTE = (
 
 def _build_delegation_note(
     *, clickup_ready: bool, notion_ready: bool, calendar_ready: bool,
-    youtube_ready: bool, gdrive_ready: bool, github_ready: bool, reminders_ready: bool = False,
+    youtube_ready: bool, gdrive_ready: bool, github_ready: bool, gmail_ready: bool = False,
+    reminders_ready: bool = False,
     forms_ready: bool = True, rmi_vault_ready: bool = False,
     vault_folder_id: str = "", amg_legal_folder_id: str = "",
 ) -> str:
@@ -361,6 +373,8 @@ def _build_delegation_note(
         note += _RMI_VAULT_NOTE_TMPL.format(vault=vault_folder_id, amg=amg_legal_folder_id)
     if github_ready:
         note += _GITHUB_NOTE
+    if gmail_ready:
+        note += _GMAIL_NOTE
     if reminders_ready:
         note += _REMINDER_NOTE
     if forms_ready:
@@ -445,6 +459,7 @@ def respond_agentic(
         tools_clickup,
         tools_gdrive,
         tools_github,
+        tools_gmail,
         tools_notion,
         tools_web,
         tools_youtube,
@@ -467,6 +482,7 @@ def respond_agentic(
     clickup_on = settings.clickup_ready and want("clickup")
     notion_on = settings.notion_ready and want("notion")
     github_on = settings.github_ready and want("github")
+    gmail_on = tools_gmail.ready() and want("gmail")
     reminders_on = bool(settings.whatsapp_ready and settings.database_url) and want("reminders")
     web_on = want("web")
     forms_on = want("forms")
@@ -490,6 +506,8 @@ def respond_agentic(
         tools += tools_gdrive.TOOLS  # Drive read + CRUD (TOOLS already includes WRITE_TOOLS)
     if github_on:
         tools += tools_github.TOOLS + tools_github.WRITE_TOOLS  # allen-piaar-control-bot — PIAAR org visibility
+    if gmail_on:
+        tools += tools_gmail.TOOLS  # ALLEN's real email — search/read/send/reply/archive across Rahm's accounts
 
     if forms_on:
         forms.ensure_seed_forms(namespace)
@@ -498,7 +516,7 @@ def respond_agentic(
     delegation_note = _build_delegation_note(
         clickup_ready=clickup_on, notion_ready=notion_on,
         calendar_ready=calendar_on, youtube_ready=youtube_on,
-        gdrive_ready=gdrive_on, github_ready=github_on,
+        gdrive_ready=gdrive_on, github_ready=github_on, gmail_ready=gmail_on,
         reminders_ready=reminders_on, forms_ready=forms_on,
         rmi_vault_ready=(clickup_on and gdrive_on and bool(settings.rmi_vault_folder_id)),
         vault_folder_id=settings.rmi_vault_folder_id,
@@ -557,6 +575,11 @@ def respond_agentic(
             if name in tools_github.WRITE_NAMES:
                 db.add_audit(namespace, "allen", name, json.dumps(inp), res)
             return res
+        if name.startswith("gmail_"):
+            res = tools_gmail.handle(name, inp)
+            if name in tools_gmail.WRITE_NAMES:
+                db.add_audit(namespace, "allen", name, json.dumps(inp), res)
+            return res
         if name == "list_virtual_forms":
             return forms.list_forms_summary(namespace)
         if name == "define_virtual_form":
@@ -576,6 +599,7 @@ def respond_agentic(
         | set(getattr(tools_calendar, "WRITE_NAMES", set()))
         | set(getattr(tools_clickup, "WRITE_NAMES", set()))
         | set(getattr(tools_github, "WRITE_NAMES", set()))
+        | set(getattr(tools_gmail, "WRITE_NAMES", set()))
     )
     _action_singletons = {"delegate_to_allie", "send_alert", "schedule_reminder", "cancel_reminder",
                           "youtube_ingest", "define_virtual_form"}

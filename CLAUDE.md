@@ -116,6 +116,7 @@ Never paste real secret values into chat or any committed file.
 | `allen/tools_clickup.py` | ClickUp tools |
 | `allen/tools_notion.py` | Notion tools |
 | `allen/tools_github.py` | GitHub tools — ALLEN's allen-piaar-control-bot App identity across the RMoor-Industries-Ltd-Co org |
+| `allen/tools_gmail.py` | Gmail tools — search/read/send/reply/archive across Rahm's Google accounts (unified OAuth, `mail.google.com` scope). Wired into ALLEN's agent; a send needs the sending account authorized via `/oauth/google/start?account=EMAIL` (calendar-only auth returns a 403 ALLEN surfaces honestly) |
 | `allen/forms.py` | Virtual forms — dynamically-generated submit_form_* tools (schedule appointment, PIAAR initiative, business task, ...) so Claude's native required-param enforcement makes ALLEN ask instead of guess; ALLEN can define new ones himself |
 | `allen/tools_market_feed.py` | Market-feed scanner (yfinance, YouTube) for "hot instrument" signals — standalone, non-agentic, unrelated to `allie.py` despite historical naming |
 | `allen/feed_watch.py` | Feed-watch job — scans configured tickers, pushes signals to Thoth (axis-tekhen) |
