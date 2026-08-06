@@ -143,6 +143,20 @@ ALLEN_TOOLS = [
             "properties": {"limit": {"type": "integer", "description": "How many recent entries (default 30)."}},
         },
     },
+    {
+        "name": "set_conversation_folder",
+        "description": (
+            "File the CURRENT console conversation into a folder. Call this the moment Rahm signals "
+            "what kind of chat it is — he says it's personal/private → use folder 'Personal'; he names "
+            "a business area → use that area's folder. Do it proactively; never leave a personal topic "
+            "sitting in General."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"folder": {"type": "string", "description": "Folder name, e.g. 'Personal', 'AMG Operations'."}},
+            "required": ["folder"],
+        },
+    },
 ]
 
 # Gated on settings.whatsapp_ready and settings.database_url (see respond_agentic) rather
@@ -453,6 +467,7 @@ def respond_agentic(
     max_tokens: int = 900,
     model: Optional[str] = None,
     tool_scope: Optional[set[str]] = None,
+    conversation_id: Optional[str] = None,
 ) -> str:
     from . import (
         tools_calendar,
@@ -531,6 +546,14 @@ def respond_agentic(
             return "Fault recorded to the error log."
         if name == "read_error_log":
             return _format_errors(db.list_errors(namespace, inp.get("limit", 30)))
+        if name == "set_conversation_folder":
+            if not conversation_id:
+                return "No active console conversation to file (this only applies to the console chat)."
+            folder = (inp.get("folder") or "").strip()
+            if not folder:
+                return "No folder name given."
+            db.rename_conversation(namespace, conversation_id, None, folder)
+            return f"Filed this conversation under '{folder}'."
         if name == "delegate_to_allie":
             task = inp.get("task", "")
             res = allie.run(task, namespace)
@@ -602,7 +625,7 @@ def respond_agentic(
         | set(getattr(tools_gmail, "WRITE_NAMES", set()))
     )
     _action_singletons = {"delegate_to_allie", "send_alert", "schedule_reminder", "cancel_reminder",
-                          "youtube_ingest", "define_virtual_form"}
+                          "youtube_ingest", "define_virtual_form", "set_conversation_folder"}
     _turn = {"actions": 0}
 
     def _is_action(name: str) -> bool:

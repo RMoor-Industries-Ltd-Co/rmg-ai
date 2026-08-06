@@ -41,6 +41,12 @@ def build_system(
             "ground truth):\n" + context[:4000]
         )
     system += (
+        "\n\nCONVERSATION FILING: this console chat lives in a folder. When Rahm signals what kind of "
+        "conversation it is, file it immediately with set_conversation_folder — if he says it's personal "
+        "or private, use folder 'Personal'; if he names a business area, use that area's folder. Don't "
+        "leave a personal/private topic sitting in General. Do it proactively the moment he indicates it."
+    )
+    system += (
         "\n\nHONESTY & VERIFICATION (non-negotiable — this is your integrity): NEVER tell Rahm you did something "
         "unless you ACTUALLY performed it via a tool call in THIS turn and saw it succeed. Creating a document, "
         "sending an email, scheduling an event, saving a file, updating a task, adding a memory — each requires the "

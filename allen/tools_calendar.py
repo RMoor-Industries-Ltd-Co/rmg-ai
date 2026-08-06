@@ -92,27 +92,49 @@ TOOLS = [
 WRITE_NAMES = {"calendar_create_event", "calendar_update_event", "calendar_delete_event"}
 
 
+def _calendar_account() -> str:
+    from . import google_auth
+
+    return google_auth.default_account()
+
+
 def refresh_token() -> str | None:
+    # Legacy calendar-only token, kept as a fallback source.
     return db.get_config("google_calendar_refresh_token") or settings.google_calendar_refresh_token or None
 
 
 def ready() -> bool:
-    return bool(settings.google_oauth_client_id and settings.google_oauth_client_secret and refresh_token())
+    from . import google_auth
+
+    if not (settings.google_oauth_client_id and settings.google_oauth_client_secret):
+        return False
+    return bool(google_auth.refresh_token_for(_calendar_account()) or refresh_token())
 
 
 def _access_token() -> str:
-    r = requests.post(
-        TOKEN_URL,
-        data={
-            "client_id": settings.google_oauth_client_id,
-            "client_secret": settings.google_oauth_client_secret,
-            "refresh_token": refresh_token(),
-            "grant_type": "refresh_token",
-        },
-        timeout=30,
-    )
-    r.raise_for_status()
-    return r.json()["access_token"]
+    # Prefer the UNIFIED per-account Google token: one production authorization via
+    # /oauth/google/start then covers Calendar + Gmail + Drive together, so Rahm isn't
+    # re-authorizing each service separately. Falls back to the legacy calendar-only token.
+    from . import google_auth
+
+    try:
+        return google_auth.access_token_for(_calendar_account())
+    except Exception:
+        rt = refresh_token()
+        if not rt:
+            raise
+        r = requests.post(
+            TOKEN_URL,
+            data={
+                "client_id": settings.google_oauth_client_id,
+                "client_secret": settings.google_oauth_client_secret,
+                "refresh_token": rt,
+                "grant_type": "refresh_token",
+            },
+            timeout=30,
+        )
+        r.raise_for_status()
+        return r.json()["access_token"]
 
 
 def _h() -> dict:
