@@ -314,7 +314,7 @@ def console_chat(body: dict, request: Request) -> dict:
     model_override = (body or {}).get("model") or None
     # ALLEN answers; he may delegate operational legwork to ALLIE behind the scenes (agentic).
     try:
-        raw = agent.respond_agentic(msg, history, context, ns, max_tokens=900, model=model_override)
+        raw = agent.respond_agentic(msg, history, context, ns, max_tokens=900, model=model_override, conversation_id=conv_id)
     except Exception as exc:
         raise HTTPException(500, f"ALLEN encountered an error: {exc}") from exc
     reply, changed = _apply_memory_ops(ns, raw)
