@@ -19,3 +19,4 @@ venv/
 
 # brand prompt config (not a secret)
 !allen/presets.json
+.venv/

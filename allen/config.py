@@ -7,6 +7,11 @@ class Settings(BaseSettings):
     # Auth — shared key required on /draft, /speak, /listen (blank = open).
     allen_api_key: str = ""
     admin_api_key: str = ""  # mints per-project API keys via POST /projects
+    # Privilege scope an MCP client runs at (see mcp_server.py). "allie" is the business
+    # profile — the gatekeeper rule, Rahm's PERSONAL systems out of reach — and is the
+    # deliberate default: an MCP key lives in client software, not in Rahm's head. Widen to
+    # "allen" only for a client that genuinely needs overseer reach.
+    mcp_scope: str = "allie"
 
     # Platform data layer (projects + namespaced memory). Blank = stateless mode.
     database_url: str = ""
