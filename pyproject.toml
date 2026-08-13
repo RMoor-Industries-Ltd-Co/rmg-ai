@@ -5,6 +5,7 @@ description = "RMG AI systems — ALLEN (brand-voice scripting + speech). ALLIE 
 requires-python = ">=3.11"
 dependencies = [
   "fastapi>=0.115",
+  "fastmcp>=3.4,<4",
   "uvicorn[standard]>=0.32",
   "anthropic>=0.40",
   "requests>=2.32",

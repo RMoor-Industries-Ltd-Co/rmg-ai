@@ -1,9 +1,10 @@
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import Response, PlainTextResponse
 
-from . import backup, brands, chat, db, docs, emotion, logs, meeting, metadata, replies, scheduler, scripts, speech, topics, usage, web
+from . import backup, brands, chat, db, docs, emotion, logs, mcp_server, meeting, metadata, replies, scheduler, scripts, speech, topics, usage, web
 from .config import settings
 from .models import (
     ChatRequest,
@@ -28,20 +29,21 @@ from .models import (
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="ALLEN", version="0.1.0")
-app.include_router(web.router)
-
-from pathlib import Path as _Path  # noqa: E402
-
-from fastapi.staticfiles import StaticFiles  # noqa: E402
-
-_static_dir = _Path(__file__).parent / "static"
-if _static_dir.exists():
-    app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
+# The PIAAR MCP server, mounted at /mcp as a Streamable HTTP ASGI app.
+_mcp_app = mcp_server.build().http_app(path="/")
 
 
-@app.on_event("startup")
-def _startup() -> None:
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """Startup/shutdown for ALLEN *and* the MCP session manager.
+
+    This has to be one combined lifespan rather than the @app.on_event handlers ALLEN used
+    before: FastMCP needs its lifespan entered for the MCP session manager to initialize,
+    and FastAPI ignores on_event handlers entirely once a lifespan is supplied. Leaving
+    them in place would have silently stopped scheduler.start() and the DB init — the
+    morning briefing, feed watch, rollups and reminders would all have quietly stopped
+    firing with nothing in the logs to say why.
+    """
     if db.db_ready():
         try:
             db.init_db()
@@ -52,17 +54,31 @@ def _startup() -> None:
         scheduler.start()
     except Exception as exc:  # a scheduler failure must not take down the whole app
         print(f"[allen] scheduler failed to start: {exc}")
-    # Kick an initial memory backup off the request path so /health shows directory + backup
-    # state right after boot instead of waiting an hour for the first scheduled run.
+    # Kick an initial memory backup off the request path so /health shows directory +
+    # backup state right after boot instead of waiting an hour for the first scheduled run.
     if settings.memory_backup_enabled and db.db_ready():
         import threading
 
         threading.Thread(target=backup.run_all, daemon=True).start()
 
+    try:
+        async with _mcp_app.lifespan(app):
+            yield
+    finally:
+        scheduler.stop()
 
-@app.on_event("shutdown")
-def _shutdown() -> None:
-    scheduler.stop()
+
+app = FastAPI(title="ALLEN", version="0.1.0", lifespan=_lifespan)
+app.include_router(web.router)
+app.mount("/mcp", _mcp_app)
+
+from pathlib import Path as _Path  # noqa: E402
+
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+
+_static_dir = _Path(__file__).parent / "static"
+if _static_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
 
 
 def require_key(x_allen_key: str | None = Header(default=None)) -> None:
