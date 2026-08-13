@@ -5,10 +5,9 @@ data, and execution across the BUSINESS worlds (RMG + RMI), and now works AMG's 
 directly as well (Cappo remains her deeper-AMG execution agent). By design she is grounded in
 ALLEN's business memory only — never Rahm's personal/sensitive context (the gatekeeper rule)."""
 
-import json
 from typing import Optional
 
-from . import db, memory
+from . import memory
 from .clock import now_line
 from .llm import get_llm
 
@@ -65,45 +64,12 @@ def run(task: str, namespace: str) -> str:
     """Delegation entrypoint — ALLEN hands ALLIE a task. She works it AGENTICALLY: pulling live data
     from ClickUp (projects) and Notion (knowledge base) before answering, scoped to the business
     spaces, then returns organized findings for ALLEN to synthesize."""
-    from . import (
-        tools_anpu,
-        tools_cappo,
-        tools_clickup,
-        tools_constance,
-        tools_gdrive,
-        tools_notion,
-        tools_thoth,
-        tools_vale,
-        tools_youtube,
-    )
-    from .config import settings
+    from . import registry
 
     context = memory.allie_context(namespace)
-    tools: list = []
-    if settings.clickup_ready:
-        tools += tools_clickup.TOOLS + tools_clickup.WRITE_TOOLS
-    if settings.notion_ready:
-        tools += tools_notion.TOOLS
-    if tools_cappo.ready():
-        tools += tools_cappo.TOOLS  # delegate AMG work down to Cappo
-    if settings.cappo_report_ready:
-        tools += tools_cappo.REPORT_TOOLS  # pull his cached report (separate URL from delegation)
-    if tools_constance.ready():
-        tools += tools_constance.TOOLS  # delegate a Connection Circle task to Constance
-    if settings.constance_report_ready:
-        tools += tools_constance.REPORT_TOOLS  # pull her cached executive status report
-    if tools_vale.ready():
-        tools += tools_vale.TOOLS  # delegate HVN showroom questions to Vale
-    if settings.vale_report_ready:
-        tools += tools_vale.REPORT_TOOLS  # pull her cached HVN<->AMG activity report
-    if tools_anpu.ready():
-        tools += tools_anpu.TOOLS  # pull AXIS/Anpu's already-cached oversight reviews
-    if tools_thoth.ready():
-        tools += tools_thoth.TOOLS  # pull AXIS/Thoth's already-cached candidate board
-    if tools_youtube.ready():
-        tools += tools_youtube.TOOLS  # YouTube → Drive for research + b-roll
-    if tools_gdrive.ready():
-        tools += tools_gdrive.TOOLS  # Drive read + CRUD (TOOLS already includes WRITE_TOOLS)
+    # The "allie" scope IS the gatekeeper rule — ClickUp scope="business", Notion
+    # business_only — enforced inside registry.dispatch rather than restated here.
+    tools = registry.build_tools("allie", namespace)
     if not tools:  # no live sources configured — reason over memory
         return respond(task, history=[], context=context, max_tokens=1200, namespace=namespace)
 
@@ -147,46 +113,10 @@ def run(task: str, namespace: str) -> str:
     )
 
     def runner(name: str, inp: dict) -> str:
-        inp = inp or {}
-        if name.startswith("clickup_"):
-            res = tools_clickup.handle(name, inp, scope="business")
-            if name in tools_clickup.WRITE_NAMES:
-                db.add_audit(namespace, "allie", name, json.dumps(inp), res)
-            return res
-        if name.startswith("notion_"):
-            return tools_notion.handle(name, inp, business_only=True)
-        if name == "delegate_to_cappo":
-            res = tools_cappo.handle(inp.get("task", ""))
-            db.add_audit(namespace, "allie", "delegate_to_cappo", inp.get("task", ""), res)
-            return res
-        if name == "cappo_get_report":
-            return tools_cappo.get_report()
-        if name == "delegate_to_constance":
-            res = tools_constance.handle(inp.get("task", ""))
-            db.add_audit(namespace, "allie", "delegate_to_constance", inp.get("task", ""), res)
-            return res
-        if name == "constance_get_report":
-            return tools_constance.get_report()
-        if name == "delegate_to_vale":
-            res = tools_vale.handle(inp.get("task", ""))
-            db.add_audit(namespace, "allie", "delegate_to_vale", inp.get("task", ""), res)
-            return res
-        if name == "vale_get_report":
-            return tools_vale.get_report()
-        if name == "anpu_get_reviews":
-            return tools_anpu.handle(name, inp)
-        if name == "thoth_get_status":
-            return tools_thoth.handle(name, inp)
-        if name.startswith("youtube_"):
-            res = tools_youtube.handle(name, inp)
-            db.add_audit(namespace, "allie", name, inp.get("url", ""), res[:200])
-            return res
-        if name.startswith("drive_"):
-            res = tools_gdrive.handle(name, inp)
-            if name in tools_gdrive.WRITE_NAMES:
-                db.add_audit(namespace, "allie", name, json.dumps(inp), res)
-            return res
-        return f"(unknown tool: {name})"
+        # Routing, audit, and fault capture all live in registry.dispatch. ALLIE previously
+        # had no fault capture at all — a tool that failed on her side left no error-log
+        # trail, so sharing the wrapper closes that gap as well as removing the duplication.
+        return registry.dispatch(name, inp, scope="allie", namespace=namespace, actor="allie")
 
     messages = [{"role": "user", "content": f"Task from ALLEN: {task}"}]
     return get_llm().run_agent(
