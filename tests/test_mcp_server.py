@@ -205,7 +205,7 @@ def test_withheld_tools_are_absent_at_every_scope(monkeypatch):
 
 def test_default_scope_keeps_personal_systems_off_the_surface(monkeypatch):
     _force_ready(monkeypatch)
-    assert mcp_server._mcp_scope() == "allie"
+    assert mcp_server._default_scope() == "allie"
     names = {t["name"] for t in mcp_server.visible_tools("ns")}
     assert not any(n.startswith("calendar_") for n in names), "Rahm's calendar is not an MCP surface"
 
@@ -215,7 +215,79 @@ def test_invalid_scope_falls_back_to_least_privilege(monkeypatch):
     from allen.config import settings
 
     monkeypatch.setattr(type(settings), "mcp_scope", property(lambda self: "root"), raising=False)
-    assert mcp_server._mcp_scope() == "allie"
+    assert mcp_server._default_scope() == "allie"
+
+
+# ---------------------------------------------------------------------------------------
+# Per-caller scope — the replacement for a single process-wide MCP_SCOPE.
+#
+# The PIAAR fabric issues one downstream credential per principal, so the key that
+# authenticates a request is what decides the surface it reaches. These lock the derivation
+# rules, which are the security-relevant half.
+# ---------------------------------------------------------------------------------------
+
+def test_scope_follows_the_authenticated_key(monkeypatch):
+    """Two keys, one process, two different surfaces — the whole point of per-caller scope."""
+    _force_ready(monkeypatch)
+    allen_key = {"id": "p1", "name": "ALLEN", "namespace": "ns", "mcp_scope": "allen"}
+    allie_key = {"id": "p2", "name": "ALLIE", "namespace": "ns", "mcp_scope": "allie"}
+
+    assert mcp_server.scope_for_project(allen_key) == "allen"
+    assert mcp_server.scope_for_project(allie_key) == "allie"
+
+    allen_tools = {t["name"] for t in mcp_server.visible_tools("ns", "allen")}
+    allie_tools = {t["name"] for t in mcp_server.visible_tools("ns", "allie")}
+    assert allen_tools != allie_tools, "two keys must not resolve to one surface"
+
+    # The two scopes are DIFFERENT, not nested — worth stating, because "ALLIE is narrower"
+    # is the intuitive model and it is only half true. ALLEN is the overseer and holds the
+    # personal surface; ALLIE is the delegation tier and holds the sibling-agent tools ALLEN
+    # reaches through her rather than directly.
+    assert any(n.startswith("calendar_") for n in allen_tools), "ALLEN holds the personal surface"
+    assert not any(n.startswith("calendar_") for n in allie_tools), "the gatekeeper rule holds"
+    assert "cappo_get_report" in allie_tools, "ALLIE is the delegation tier"
+    assert "cappo_get_report" not in allen_tools
+
+
+def test_key_without_a_scope_uses_the_process_default(monkeypatch):
+    """Every key issued before per-caller scope existed keeps behaving exactly as it did."""
+    _force_ready(monkeypatch)
+    for value in (None, "", "   "):
+        proj = {"id": "p", "name": "n", "namespace": "ns", "mcp_scope": value}
+        assert mcp_server.scope_for_project(proj) == mcp_server._default_scope()
+    # Missing entirely (a row read before the column existed) behaves the same way.
+    assert mcp_server.scope_for_project({"id": "p", "namespace": "ns"}) == mcp_server._default_scope()
+
+
+def test_invalid_per_key_scope_falls_back_to_least_privilege_not_the_default(monkeypatch):
+    """A typo in one key's scope must never inherit a wider process default.
+
+    If the process runs at "allen" and a key says "alen", the safe answer is "allie" — not
+    the overseer surface the process happens to be at.
+    """
+    from allen.config import settings
+
+    monkeypatch.setattr(type(settings), "mcp_scope", property(lambda self: "allen"), raising=False)
+    assert mcp_server._default_scope() == "allen"
+    typo = {"id": "p", "name": "n", "namespace": "ns", "mcp_scope": "alen"}
+    assert mcp_server.scope_for_project(typo) == "allie"
+
+
+def test_forwarded_principal_header_cannot_choose_a_scope(monkeypatch):
+    """x-piaar-principal is a claim, not a credential.
+
+    The gateway forwards it for correlation. If it could select a scope, any holder of a
+    valid key could assert any principal — an escalation primitive rather than a control.
+    """
+    import inspect
+
+    _force_ready(monkeypatch)
+    narrow = {"id": "p", "name": "n", "namespace": "ns", "mcp_scope": "allie"}
+    # Whatever a caller might assert, the answer comes from the authenticated key alone.
+    assert mcp_server.scope_for_project(narrow) == "allie"
+    # Structural, not incidental: the derivation is a pure function of the project row, so it
+    # has no access to request headers to be tempted by.
+    assert list(inspect.signature(mcp_server.scope_for_project).parameters) == ["proj"]
 
 
 def test_tool_order_is_stable(monkeypatch):

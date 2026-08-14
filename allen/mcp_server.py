@@ -7,11 +7,23 @@ holds every sibling agent's URL and key (Cappo, Constance, Vale, Anpu, Thoth) wi
 clients beside them. So a server hosted inside ALLEN exposes the entire fleet without the
 sibling repos changing a line, and without a second implementation of any integration.
 
-SCOPE IS THE PRIVILEGE BOUNDARY. An MCP client gets `registry`'s **"allie"** profile by
-default — the gatekeeper rule, business systems only. Rahm's PERSONAL systems (his
-calendar, his Gmail, his personal ClickUp spaces) are not on this surface at all unless
-`MCP_SCOPE` is deliberately widened to "allen". Least privilege is the default because an
-MCP key is handed to client software, not typed by Rahm.
+SCOPE IS THE PRIVILEGE BOUNDARY, AND IT IS PER CALLER. The scope a request runs at is
+derived from the **key it authenticated with** (`projects.mcp_scope`), not from a single
+process-wide setting. That is what lets the PIAAR fabric issue one credential per principal
+— `allen@business` and `allie@business` hold different keys — and have each reach only its
+own surface through one shared process.
+
+Identity stays **proved, not claimed**: the scope follows the authenticated credential, and
+the `x-piaar-principal` header a gateway forwards is correlation only. It is deliberately
+never consulted when choosing a scope, because honouring a bare header would let any holder
+of a valid key assert any principal.
+
+A key with no scope set falls back to `MCP_SCOPE` (default `"allie"` — the gatekeeper rule,
+business systems only), so keys issued before this existed are unaffected. Rahm's PERSONAL
+systems are off this surface unless a key is deliberately issued at `"allen"`. Least
+privilege is the default because an MCP key is handed to client software, not typed by Rahm
+— and an unrecognised per-key value falls back to least privilege rather than to the
+process default, so a typo can never widen a key.
 
 WITHHELD IN v1 (see `_WITHHELD_PREFIXES`): Gmail, GitHub writes, virtual-form submissions,
 and the alert/reminder tools. These either reach Rahm directly (a WhatsApp push), write to
@@ -53,11 +65,44 @@ _WITHHELD_NAMES = {
 }
 
 
-def _mcp_scope() -> str:
-    """The registry scope an MCP client runs as. Defaults to ALLIE's business profile."""
+def _default_scope() -> str:
+    """The process-wide fallback scope. Defaults to ALLIE's business profile."""
     scope = (getattr(settings, "mcp_scope", "") or "allie").strip().lower()
     if scope not in registry.SCOPES:
         logger.warning("[mcp] invalid MCP_SCOPE %r — falling back to 'allie'", scope)
+        return "allie"
+    return scope
+
+
+def scope_for_project(proj: Optional[dict]) -> str:
+    """The scope *this caller* runs at, derived from the key it authenticated with.
+
+    This is the per-caller privilege boundary that replaces a single process-wide
+    ``MCP_SCOPE``. The PIAAR fabric issues one downstream credential per principal
+    (``allen@business`` and ``allie@business`` hold different keys), so the key that
+    authenticates the request also decides what that request may reach. Identity stays
+    **proved by credential** — the ``x-piaar-principal`` header a gateway forwards is
+    correlation only and is deliberately never consulted here. Honouring it would let any
+    holder of a valid key assert any principal, which is a privilege-escalation primitive
+    rather than a security control.
+
+    A project with no ``mcp_scope`` set falls back to the process default, so every key
+    issued before this existed keeps behaving exactly as it did.
+
+    An unrecognised value falls back to **least privilege**, never to the process default:
+    a typo in a per-key scope must not silently widen that key to whatever the process
+    happens to be running at.
+    """
+    raw = (proj or {}).get("mcp_scope") if isinstance(proj, dict) else None
+    if raw is None or not str(raw).strip():
+        return _default_scope()
+    scope = str(raw).strip().lower()
+    if scope not in registry.SCOPES:
+        logger.warning(
+            "[mcp] project %r has invalid mcp_scope %r — falling back to least privilege",
+            (proj or {}).get("id"),
+            raw,
+        )
         return "allie"
     return scope
 
@@ -74,7 +119,7 @@ def visible_tools(namespace: str, scope: Optional[str] = None) -> list:
     prompt prefix, and a list that reshuffles between calls would miss that cache on every
     turn.
     """
-    tools = registry.build_tools(scope or _mcp_scope(), namespace)
+    tools = registry.build_tools(scope or _default_scope(), namespace)
     return sorted(
         (t for t in tools if not _is_withheld(t["name"])),
         key=lambda t: t["name"],
@@ -174,11 +219,12 @@ def build() -> FastMCP:
     )
     async def piaar_whoami() -> str:
         proj = _caller()
-        scope = _mcp_scope()
+        scope = scope_for_project(proj)
         names = [t["name"] for t in visible_tools(proj["namespace"], scope)]
+        derived = "key" if (proj or {}).get("mcp_scope") else "process default"
         return (
             f"project: {proj['name']} (namespace {proj['namespace']})\n"
-            f"scope: {scope}\n"
+            f"scope: {scope} (from {derived})\n"
             f"tools: {len(names)}\n" + "\n".join(f"  - {n}" for n in names)
         )
 
@@ -186,7 +232,12 @@ def build() -> FastMCP:
     async def _healthz(request):  # noqa: ANN001 - starlette Request
         from starlette.responses import JSONResponse
 
-        return JSONResponse({"ok": True, "server": SERVER_NAME, "scope": _mcp_scope()})
+        # `default_scope`, not `scope`: this endpoint is unauthenticated, so there is no
+        # caller to derive a scope for. Reporting it as "the" scope would misstate what an
+        # authenticated caller actually gets now that scope is per-key.
+        return JSONResponse(
+            {"ok": True, "server": SERVER_NAME, "default_scope": _default_scope()}
+        )
 
     mcp.add_middleware(RegistryMiddleware())
     return mcp
@@ -195,7 +246,7 @@ def build() -> FastMCP:
 def _registry_tools() -> list:
     """The registry's tools for the in-flight caller, as MCP Tool objects."""
     proj = _caller()
-    scope = _mcp_scope()
+    scope = scope_for_project(proj)
     return [
         _RegistryTool(
             name=t["name"],
