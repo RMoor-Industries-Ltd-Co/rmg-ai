@@ -68,6 +68,12 @@ def init_db() -> None:
                 api_key text UNIQUE NOT NULL,
                 created_at timestamptz DEFAULT now()
             );
+            -- The MCP privilege scope this key runs at ('allen' | 'allie'). NULL means "use
+            -- the process default", which is how every pre-existing key keeps behaving
+            -- exactly as it did. A key with a value set is a per-caller scope: the PIAAR
+            -- fabric issues one credential per principal, so the scope follows the
+            -- authenticated key rather than the process. See mcp_server.scope_for_project.
+            ALTER TABLE projects ADD COLUMN IF NOT EXISTS mcp_scope text;
             CREATE TABLE IF NOT EXISTS memories (
                 id text PRIMARY KEY,
                 namespace text NOT NULL,
@@ -398,7 +404,9 @@ def project_by_key(key: str) -> Optional[dict]:
     if not key:
         return None
     with _cursor() as cur:
-        cur.execute("SELECT id, name, namespace FROM projects WHERE api_key = %s", (key,))
+        cur.execute(
+            "SELECT id, name, namespace, mcp_scope FROM projects WHERE api_key = %s", (key,)
+        )
         return cur.fetchone()
 
 
