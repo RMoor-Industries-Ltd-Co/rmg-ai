@@ -416,14 +416,30 @@ def list_projects() -> list[dict]:
         return list(cur.fetchall())
 
 
-def create_project(name: str, namespace: str) -> dict:
+def create_project(name: str, namespace: str, mcp_scope: Optional[str] = None) -> dict:
+    """Mint a project + its API key, at the intended MCP scope from the first instant.
+
+    ``mcp_scope`` is written in the SAME INSERT as the key rather than patched in
+    afterwards. A create-then-update sequence would leave the row briefly live at the
+    process-wide default — an ``allen``-intended credential answering at ``allie``, or worse
+    the reverse — and the key is usable the moment the row commits.
+
+    Re-validated here via ``registry.normalize_scope`` even though the route already
+    validated: this is the only writer of the column, and the column has no CHECK
+    constraint, so a future caller reaching the data layer directly must not be able to
+    write a value the read side would then quietly downgrade to least privilege.
+    """
+    from . import registry  # deferred: registry imports db at module scope
+
+    scope = registry.normalize_scope(mcp_scope)
     key = "av_" + secrets.token_urlsafe(24)
     pid = f"proj-{namespace}"
     with _cursor() as cur:
         cur.execute(
-            "INSERT INTO projects (id, name, namespace, api_key) VALUES (%s, %s, %s, %s) "
-            "RETURNING id, name, namespace",
-            (pid, name, namespace, key),
+            "INSERT INTO projects (id, name, namespace, api_key, mcp_scope) "
+            "VALUES (%s, %s, %s, %s, %s) "
+            "RETURNING id, name, namespace, mcp_scope",
+            (pid, name, namespace, key, scope),
         )
         row = cur.fetchone()
     return {**row, "api_key": key}

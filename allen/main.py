@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import Response, PlainTextResponse
 
-from . import backup, brands, chat, db, docs, emotion, logs, mcp_server, meeting, metadata, replies, scheduler, scripts, speech, topics, usage, web
+from . import backup, brands, chat, db, docs, emotion, logs, mcp_server, meeting, metadata, registry, replies, scheduler, scripts, speech, topics, usage, web
 from .config import settings
 from .models import (
     ChatRequest,
@@ -155,8 +155,15 @@ def create_project_ep(req: CreateProjectRequest) -> dict:
     ns = "".join(c for c in req.namespace.lower() if c.isalnum() or c in "-_")
     if not ns:
         raise HTTPException(400, "namespace must be alphanumeric")
+    # Validated in its own try/except, and BEFORE the insert: the broad handler below
+    # reports every failure as a name/namespace collision, so folding scope validation into
+    # it would answer "namespace taken?" to what is actually a typo'd privilege level.
     try:
-        return db.create_project(req.name, ns)
+        scope = registry.normalize_scope(req.mcp_scope)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    try:
+        return db.create_project(req.name, ns, mcp_scope=scope)
     except Exception as exc:
         raise HTTPException(400, f"could not create project (name/namespace taken?): {exc}") from exc
 
