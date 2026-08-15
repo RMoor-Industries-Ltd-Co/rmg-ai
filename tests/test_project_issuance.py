@@ -53,8 +53,9 @@ def test_blank_scope_means_not_set(blank):
     assert registry.normalize_scope(blank) is None
 
 
-# "allen-business" is the namespace, not a scope — the most plausible confusion at issuance.
-@pytest.mark.parametrize("bad", ["root", "admin", "allen-business", "alle", "overseer"])
+# "allie-business" is a namespace, not a scope — the most plausible confusion at issuance,
+# and the trap is that its sibling "allen-business" IS a valid scope.
+@pytest.mark.parametrize("bad", ["root", "admin", "allie-business", "alle", "overseer"])
 def test_invalid_scope_raises(bad):
     with pytest.raises(ValueError):
         registry.normalize_scope(bad)

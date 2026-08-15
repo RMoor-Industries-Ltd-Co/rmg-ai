@@ -25,10 +25,16 @@ privilege is the default because an MCP key is handed to client software, not ty
 — and an unrecognised per-key value falls back to least privilege rather than to the
 process default, so a typo can never widen a key.
 
-WITHHELD IN v1 (see `_WITHHELD_PREFIXES`): Gmail, GitHub writes, virtual-form submissions,
-and the alert/reminder tools. These either reach Rahm directly (a WhatsApp push), write to
-repositories, or act on personal data — each should be re-added deliberately, one at a
-time, not swept in because it happened to be in the registry.
+WITHHELD IN v1 (see `_WITHHELD_PREFIXES` / `_WITHHELD_NAMES`): Gmail, GitHub writes,
+virtual-form submissions, and the alert/reminder tools. These either reach Rahm directly (a
+WhatsApp push), write to repositories, or act on personal data — each should be re-added
+deliberately, one at a time, not swept in because it happened to be in the registry.
+
+That list is a NAME filter, and a name filter cannot express every boundary. `clickup_*` and
+`notion_*` are dual-domain: the same name reaches personal or business data depending on the
+argument the dispatcher passes. Drawing a business/personal line therefore requires a scope
+with its own dispatcher (`registry._dispatch_allen_business`), not an entry here. Withhold by
+name only what is unsafe under EVERY argument.
 
 Auth reuses the existing `x-allen-key` → project/namespace mapping so an MCP key is a
 first-class ALLEN project key, compared in constant time. A compromised key grants exactly
@@ -62,6 +68,13 @@ _WITHHELD_NAMES = {
     "set_conversation_folder",
     # Virtual-form management is ALLEN's own authoring surface.
     "define_virtual_form", "list_virtual_forms",
+    # GitHub writes. This module's docstring and .env.example both claimed these were
+    # withheld "at both scopes"; they were not, they were merely absent from the allie
+    # profile, so the claim was vacuous at the default scope and false the moment a key ran
+    # at "allen". Listed explicitly now, which makes the documented invariant enforced
+    # rather than incidental. Kept in sync with tools_github.WRITE_NAMES by a test rather
+    # than by a module-level import, so this list stays readable as data.
+    "github_create_issue", "github_comment_issue", "github_update_file",
 }
 
 

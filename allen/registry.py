@@ -11,12 +11,24 @@ SCOPE IS THE PRIVILEGE BOUNDARY, and it is data rather than duplicated code:
 
 - ``"allen"`` — the overseer. Every ClickUp space (personal + RMG/RMI + AMG), all of
   Notion, calendar, Gmail, GitHub, Drive, forms.
+- ``"allen-business"`` — ALLEN's breadth with ALLIE's domain constraints. Same overseer
+  tools (GitHub reads, Drive, web, YouTube) but ClickUp ``scope="business"``, Notion
+  ``business_only=True``, and no calendar at all. This is the scope a BUSINESS-domain
+  MCP credential runs at.
 - ``"allie"`` — the gatekeeper rule. ClickUp ``scope="business"``, Notion
   ``business_only=True``, plus delegation down to Cappo/Constance/Vale and read-only
   pulls from Anpu/Thoth. Rahm's PERSONAL systems stay out of reach.
 
 An MCP client gets ``"allie"`` by default: least privilege, and it keeps Rahm's personal
 systems off the MCP surface entirely.
+
+WHY ``"allen-business"`` HAD TO BE A SCOPE rather than a withholding list: ``clickup_*``
+and ``notion_*`` are dual-domain tools. The SAME tool name reaches personal or business
+data depending on the argument the dispatcher passes — ``scope="all"`` vs
+``scope="business"``, ``business_only`` set or not. A name-based filter (which is all
+``mcp_server._WITHHELD_NAMES`` can express) is structurally incapable of drawing that
+line, because there is no name to withhold. The boundary has to be applied where the
+argument is chosen, which is here.
 """
 
 import json
@@ -27,7 +39,7 @@ from . import db, forms
 
 logger = logging.getLogger(__name__)
 
-SCOPES = ("allen", "allie")
+SCOPES = ("allen", "allen-business", "allie")
 
 #: Returned by a scope dispatcher when it does not own the tool, so :func:`dispatch` can
 #: fall through to the caller's own built-ins. A sentinel object rather than ``None``
@@ -143,6 +155,48 @@ def _allen_tools(namespace: str, on: dict) -> list:
     return tools
 
 
+def _allen_business_tools(namespace: str) -> list:
+    """ALLEN's profile with every PERSONAL-domain capability removed.
+
+    What is deliberately absent, and why each one:
+
+    - **calendar_\\*** — Rahm's personal calendar, and ``_allen_tools`` grants write as well
+      as read. There is no business subset of it to keep, so the whole module is out.
+    - **gmail_\\*, forms, reminders** — personal or push-to-Rahm's-phone. Already withheld
+      from MCP at every scope; omitted here too so the profile is honest on its own rather
+      than relying on a downstream filter to clean it up.
+    - **``tools_github.WRITE_TOOLS``** — reads are legitimate business breadth, writes are
+      withheld in v1. ``mcp_server`` enforces that at the transport as well; both, because
+      this profile is the claim and that list is the enforcement.
+    - **``agent.ALLEN_TOOLS``** — ``delegate_to_allie``, ``get_agent_rollup``,
+      ``log_error``, ``read_error_log``, ``review_activity``. These need ``agent.py``'s
+      per-turn closure and reach ``dispatch`` via ``fallback=``, which the MCP server does
+      not supply. Published at ``"allen"`` scope they answer ``(unknown tool: ...)`` and log
+      a fault row for the privilege. Advertising a tool that cannot run is worse than not
+      advertising it: a client cannot tell it apart from an outage.
+
+    ALLIE's delegation tools (Cappo/Constance/Vale) are NOT grafted on. They are hers, and
+    this scope's job is to make ALLEN's existing reach safe, not to invent a new capability
+    set. Adding them later is one line if a client turns out to need them.
+    """
+    from . import tools_clickup, tools_gdrive, tools_github, tools_notion, tools_web, tools_youtube
+    from .config import settings
+
+    tools: list = []
+    if settings.clickup_ready:
+        tools += tools_clickup.TOOLS + tools_clickup.WRITE_TOOLS  # constrained to business at dispatch
+    if settings.notion_ready:
+        tools += tools_notion.TOOLS  # business_only applied at dispatch
+    tools += tools_web.TOOLS
+    if tools_youtube.any_ready():
+        tools += tools_youtube.available_tools()
+    if tools_gdrive.ready():
+        tools += tools_gdrive.TOOLS
+    if settings.github_ready:
+        tools += tools_github.TOOLS  # reads only — WRITE_TOOLS deliberately not added
+    return tools
+
+
 def _allie_tools(namespace: str) -> list:
     """ALLIE's tool list — the business profile. No calendar, no Gmail, no GitHub, no
     forms; those are ALLEN's. Delegation and cached-report pulls are hers."""
@@ -231,6 +285,8 @@ def build_tools(
         raise ValueError(f"unknown scope {scope!r} — expected one of {SCOPES}")
     if scope == "allie":
         return _allie_tools(namespace)
+    if scope == "allen-business":
+        return _allen_business_tools(namespace)
     return _allen_tools(namespace, readiness(categories))
 
 
@@ -332,6 +388,51 @@ def _dispatch_allen(name: str, inp: dict, namespace: str, actor: str):
     return _UNHANDLED
 
 
+def _dispatch_allen_business(name: str, inp: dict, namespace: str, actor: str):
+    """ALLEN's module routing with ALLIE's constraining arguments.
+
+    This function is where the business/personal boundary is actually drawn for this scope,
+    and it has to be here rather than in a tool-name filter: ``clickup_list_tasks`` and
+    ``notion_search`` are the same names at every scope, and what makes a call business-safe
+    is the argument passed alongside them. ``scope="business"`` and ``business_only=True``
+    are copied from ``_dispatch_allie`` deliberately — one rule for what "business" means,
+    applied at both scopes that claim it.
+
+    Personal modules (calendar, Gmail, forms) are simply not routed. They fall through to
+    ``_UNHANDLED``, and the MCP server supplies no ``fallback``, so a client that calls one
+    anyway is refused — the same way ``_dispatch_allie`` already refuses them.
+
+    GitHub writes are refused with an explicit denial rather than silence. The denial string
+    trips ``looks_like_fault``, so an attempt to write through a business credential lands in
+    the error log instead of vanishing.
+    """
+    from . import tools_clickup, tools_gdrive, tools_github, tools_notion, tools_web, tools_youtube
+
+    if name.startswith("clickup_"):
+        res = tools_clickup.handle(name, inp, scope="business")
+        if name in tools_clickup.WRITE_NAMES:
+            _audit(namespace, actor, name, json.dumps(inp), res)
+        return res
+    if name.startswith("notion_"):
+        return tools_notion.handle(name, inp, business_only=True)
+    if name.startswith("web_"):
+        return tools_web.run_tool(name, inp)
+    if name.startswith("youtube_"):
+        res = tools_youtube.handle(name, inp)
+        _audit(namespace, actor, name, inp.get("url", ""), res[:200])
+        return res
+    if name.startswith("drive_"):
+        res = tools_gdrive.handle(name, inp)
+        if name in tools_gdrive.WRITE_NAMES:
+            _audit(namespace, actor, name, json.dumps(inp), res)
+        return res
+    if name.startswith("github_"):
+        if name in tools_github.WRITE_NAMES:
+            return f"denied: {name} is a GitHub write, withheld from the business scope"
+        return tools_github.handle(name, inp)
+    return _UNHANDLED
+
+
 def _dispatch_allie(name: str, inp: dict, namespace: str, actor: str):
     """ALLIE's module routing — the gatekeeper rule enforced by the scope/business_only
     arguments, exactly as allie.py did inline."""
@@ -378,7 +479,11 @@ def _dispatch_allie(name: str, inp: dict, namespace: str, actor: str):
     return _UNHANDLED
 
 
-_DISPATCHERS = {"allen": _dispatch_allen, "allie": _dispatch_allie}
+_DISPATCHERS = {
+    "allen": _dispatch_allen,
+    "allen-business": _dispatch_allen_business,
+    "allie": _dispatch_allie,
+}
 
 
 def dispatch(
