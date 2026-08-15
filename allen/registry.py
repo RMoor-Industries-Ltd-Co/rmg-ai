@@ -187,6 +187,31 @@ def _allie_tools(namespace: str) -> list:
     return tools
 
 
+def normalize_scope(raw: Optional[str]) -> Optional[str]:
+    """Validate a scope at ISSUANCE time, returning the canonical value or ``None``.
+
+    ``None`` or blank means "not set": the ``projects`` row keeps a NULL ``mcp_scope`` and
+    ``mcp_server.scope_for_project`` falls back to the process-wide default, which is how
+    every key issued before per-key scope existed keeps behaving. Blank folds into "not
+    set" rather than erroring so that what an empty scope means is decided in one place and
+    matches the read side exactly.
+
+    Anything else raises ``ValueError``.
+
+    Note the deliberate asymmetry with ``mcp_server.scope_for_project``, which falls back to
+    least privilege on an unrecognised value. Reading is the quiet end of the boundary — a
+    live request must never fail open, so it degrades. Issuing is the loud end: the caller
+    asked for a *specific* privilege level, and minting a key at some other level while
+    reporting success is how a credential ends up trusted for reach it does not have.
+    """
+    if raw is None or not str(raw).strip():
+        return None
+    scope = str(raw).strip().lower()
+    if scope not in SCOPES:
+        raise ValueError(f"unknown scope {scope!r} — expected one of {', '.join(SCOPES)}")
+    return scope
+
+
 def build_tools(
     scope: str,
     namespace: str,
