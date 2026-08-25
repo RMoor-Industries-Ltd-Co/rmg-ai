@@ -171,6 +171,9 @@ class Settings(BaseSettings):
     # always-on worker, independent of ALLEN-I-VERSE).
     anpu_reviews_url: str = ""     # e.g. https://axis-tekhen.rmasters.group/api/system/anpu/reviews
     anpu_reviews_token: str = ""   # optional bearer token, if axis-tekhen's endpoint requires one
+    # Anpu's worker-liveness surface (heartbeat age + newest-review age + pending count).
+    # Optional: if unset, tools_anpu derives it from anpu_reviews_url (/reviews -> /liveness).
+    anpu_liveness_url: str = ""
 
     # Thoth — axis-tekhen's gap-scanner manager. Pull-only status summary (candidate board).
     thoth_status_url: str = ""     # e.g. https://axis-tekhen.rmasters.group/api/stocks/thoth/candidates

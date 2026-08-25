@@ -152,3 +152,9 @@ class HealthResponse(BaseModel):
     # run. directories are 'configured' by default; call /health?verify=true to live-probe them.
     directories: Optional[dict] = None
     last_memory_backup: Optional[dict] = None
+    # ALLEN's downstream AI family (Cappo, Anpu, Thoth, Constance, Vale). Default is the
+    # cheap cached board from the 6-hourly rollup; /health?verify=true live-probes each.
+    # downstream_status summarizes it WITHOUT affecting top-level `status` (which stays a
+    # pure ALLEN-core signal) — a Vale outage must be visible, not mask ALLEN as degraded.
+    downstream: Optional[dict] = None
+    downstream_status: Optional[str] = None

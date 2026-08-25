@@ -117,12 +117,30 @@ def health(verify: bool = False) -> HealthResponse:
         last_backup = backup.last_run()
     except Exception as exc:  # health must never 500 on the extras
         print(f"[allen] health directory report failed: {exc}")
+    # Downstream AI family board. Cheap cached view by default; ?verify=true live-probes
+    # each agent (and deepens Anpu with its worker-liveness snapshot). Never affects the
+    # top-level `status` — a downstream fault surfaces via downstream_status instead.
+    downstream = None
+    downstream_status = None
+    try:
+        from . import rollup, tools_anpu
+        if verify:
+            downstream = rollup.live_probe()
+            if downstream.get("anpu", {}).get("configured"):
+                downstream["anpu"]["liveness"] = tools_anpu.get_liveness()
+        else:
+            downstream = rollup.cached_board()
+        downstream_status = rollup.board_status(downstream)
+    except Exception as exc:  # health must never 500 on the extras
+        print(f"[allen] health downstream board failed: {exc}")
     healthy = settings.llm_ready and db_status != "unreachable"
     return HealthResponse(
         status="ok" if healthy else "degraded",
         checks=checks,
         directories=directories,
         last_memory_backup=last_backup,
+        downstream=downstream,
+        downstream_status=downstream_status,
     )
 
 
