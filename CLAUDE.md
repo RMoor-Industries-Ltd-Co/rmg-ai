@@ -100,6 +100,18 @@ DOPPLER_TOKEN=<token> docker compose pull allen && docker compose up -d --force-
 `~/allen-src/` and `~/allen/rmg-ai/` were legacy directories and have been removed.
 No source code lives on the server — the image is pulled from GHCR.
 
+### Environment pass-through — version-controlled (source of truth)
+
+The production compose is now version-controlled at [`infra/docker-compose.prod.yml`](infra/docker-compose.prod.yml):
+its `allen.environment:` block is the **authoritative, complete** list of the env var NAMES
+forwarded into the container, generated from every field `allen/config.py` reads. `doppler run`
+puts values in the host env, but compose only forwards a variable it NAMES — so a var present in
+Doppler but absent from this block never reaches the container (this is what left the `/health`
+downstream board `configured: false`, issue #69). **Adding/renaming a `config.py` setting must
+update this file (and `.env.example`) in the same PR** — a repo diff, never a hidden server-only
+edit. Deploy model, the operator migration from the old untracked server file, and validation
+steps live in [`infra/DEPLOYMENT.md`](infra/DEPLOYMENT.md).
+
 ### Force-recreate is always required
 
 Always use `--force-recreate allen` — without it, `docker compose up -d` may
