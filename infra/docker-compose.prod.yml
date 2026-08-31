@@ -1,0 +1,170 @@
+# infra/docker-compose.prod.yml
+#
+# SOURCE OF TRUTH for the ALLEN-I-Verse production ENVIRONMENT PASS-THROUGH.
+#
+# Why this file exists: the live server previously kept its docker-compose.yml only under
+# /home/deploy/allen/ (untracked). Because `infra/start.sh` runs `doppler run -- docker
+# compose up`, every Doppler secret lands in the HOST env, but docker compose only forwards
+# a variable into the container if it is NAMED here. When new downstream vars (CAPPO_*,
+# ANPU_*, THOTH_*, VALE_*, CONSTANCE_*) were added to Doppler, the untracked compose was
+# never updated, so /health?verify=true reported every downstream agent `configured: false`
+# (issue #69). Version-controlling the pass-through means a future addition is a REPO DIFF,
+# not a hidden server-only edit.
+#
+# The `environment:` block below is AUTHORITATIVE and COMPLETE: it is generated from every
+# field the app reads in allen/config.py (the Settings ground truth), so it can never be a
+# partial allow-list that silently drops a needed var. Adding a new setting to config.py
+# means adding its NAME here in the same PR.
+#
+# Bare `- NAME` (no `=value`) is docker-compose shorthand for "pass the HOST env var of this
+# name into the container" — exactly what `doppler run` provides. NO SECRET VALUES live in
+# this file; only names.
+#
+# ⚠️ STRUCTURAL SERVICES (db, caddy) below are RECONCILE stubs — the volumes, image tags,
+# Postgres wiring and Caddy mounts must be reconciled against the LIVE server file before a
+# wholesale replace. See infra/DEPLOYMENT.md for the safe migration (merge the allen
+# `environment:` block into the live compose first; adopt the full file only after
+# reconciling db/caddy).
+
+services:
+  allen:
+    image: ghcr.io/rmoor-industries-ltd-co/rmg-ai/allen:latest
+    container_name: allen-allen-1
+    restart: unless-stopped
+    # App listens on 8090 (Dockerfile EXPOSE 8090; uvicorn --port 8090). Caddy proxies to it.
+    expose:
+      - "8090"
+    depends_on:
+      - db
+    environment:
+      # --- AUTHORITATIVE, COMPLETE pass-through (generated from allen/config.py) ---
+      # Values come from the host env injected by `doppler run` (Doppler allen-i-verse/prd).
+      - ALLEN_API_KEY
+      - ADMIN_API_KEY
+      - MCP_SCOPE
+      - DATABASE_URL
+      - GOOGLE_CLIENT_ID
+      - AUTH_ALLOWED_EMAIL
+      - COOKIE_SECRET
+      - ANTHROPIC_API_KEY
+      - ANTHROPIC_MODEL
+      - ANTHROPIC_EFFORT
+      - ANTHROPIC_TIMEOUT
+      - ANTHROPIC_MAX_RETRIES
+      - MAX_ATTACH_FILES
+      - MAX_UPLOAD_BYTES
+      - ELEVENLABS_API_KEY
+      - ALLEN_VOICE_ID
+      - OPENAI_API_KEY
+      - GDRIVE_CLIENT_ID
+      - GDRIVE_CLIENT_SECRET
+      - GDRIVE_REFRESH_TOKEN
+      - GDRIVE_SCRIPTS_FOLDER_ID
+      - GDRIVE_VIDEO_FOLDER_ID
+      - GDRIVE_YOUTUBE_FOLDER_ID
+      - RMI_VAULT_FOLDER_ID
+      - AMG_LEGAL_AGREEMENTS_FOLDER_ID
+      - ATELIER_DRIVE_ACCOUNT
+      - ATELIER_ROOT_FOLDER_ID
+      - ATELIER_CONTENT_ENGINE_FOLDER_ID
+      - ATELIER_BRAND_ASSETS_FOLDER_ID
+      - ATELIER_BRAND_ASSETS_IMAGE_ID
+      - ATELIER_BRAND_ASSETS_AUDIO_ID
+      - ATELIER_BRAND_ASSETS_VIDEO_ID
+      - ATELIER_VIDEO_PRODUCTION_FOLDER_ID
+      - ATELIER_AROLL_FOLDER_ID
+      - ATELIER_BROLL_FOLDER_ID
+      - ATELIER_FINAL_FOLDER_ID
+      - ATELIER_THUMBNAIL_FOLDER_ID
+      - ATELIER_THUMBNAIL_APPROVED_ID
+      - ATELIER_THUMBNAIL_ARCHIVED_ID
+      - ALLEN_FOLDER_ID
+      - ALLEN_MEMORY_FOLDER_ID
+      - ALLEN_BACKUPS_FOLDER_ID
+      - ALLEN_LOGS_FOLDER_ID
+      - MEMORY_BACKUP_ENABLED
+      - MEMORY_BACKUP_INTERVAL_HOURS
+      - MEMORY_BACKUP_ACCOUNT
+      - MEMORY_LOCAL_DIR
+      - MEMORY_BACKUP_MAX_BYTES
+      - DRIVE_READ_MAX_CHARS
+      - CLICKUP_API_TOKEN
+      - CLICKUP_TEAM_ID
+      - NOTION_API_KEY
+      - GITHUB_APP_ID
+      - GITHUB_APP_INSTALLATION_ID
+      - GITHUB_APP_PRIVATE_KEY
+      - ALLIE_AMG_ENABLED
+      - CAPPO_AGENT_URL   # downstream agent board
+      - CAPPO_AGENT_KEY   # downstream agent board
+      - CONSTANCE_AGENT_URL   # downstream agent board
+      - CONSTANCE_AGENT_KEY   # downstream agent board
+      - VALE_AGENT_URL   # downstream agent board
+      - VALE_AGENT_KEY   # downstream agent board
+      - GOOGLE_OAUTH_CLIENT_ID
+      - GOOGLE_OAUTH_CLIENT_SECRET
+      - DEFAULT_GOOGLE_ACCOUNT
+      - GOOGLE_CALENDAR_REFRESH_TOKEN
+      - GOOGLE_CALENDAR_ID
+      - GOOGLE_OAUTH_REDIRECT
+      - GOOGLE_OAUTH_UNIFIED_REDIRECT
+      - TWILIO_ACCOUNT_SID
+      - TWILIO_AUTH_TOKEN
+      - TWILIO_WHATSAPP_FROM
+      - TWILIO_WHATSAPP_TO
+      - DAILY_REPORT_TIME
+      - PORT
+      - FEED_WATCH_ENABLED
+      - FEED_WATCH_TICKERS
+      - FEED_WATCH_INTERVAL_MINUTES
+      - THOTH_INGEST_URL   # downstream agent board
+      - THOTH_INGEST_TOKEN   # downstream agent board
+      - YOUTUBE_DATA_API_KEY
+      - RSS_MOVERS_ENABLED
+      - ANPU_REVIEWS_URL   # downstream agent board
+      - ANPU_REVIEWS_TOKEN   # downstream agent board
+      - ANPU_LIVENESS_URL   # downstream agent board
+      - THOTH_STATUS_URL   # downstream agent board
+      - THOTH_STATUS_TOKEN   # downstream agent board
+      - CAPPO_REPORT_URL   # downstream agent board
+      - CONSTANCE_REPORT_URL   # downstream agent board
+      - VALE_REPORT_URL   # downstream agent board
+      # Optional OS-level timezone for DAILY_REPORT_TIME (not a Settings field; uncomment to pin):
+      # - TZ
+
+  # ---------------------------------------------------------------------------
+  # RECONCILE: the two services below are reference stubs. Confirm every value
+  # against the live /home/deploy/allen/docker-compose.yml before adopting the
+  # full file. The app reaches Postgres via DATABASE_URL (passed through above).
+  # ---------------------------------------------------------------------------
+  db:
+    image: postgres:16-alpine            # RECONCILE against live tag
+    container_name: allen-postgres-1
+    restart: unless-stopped
+    environment:
+      # RECONCILE: these Postgres creds and the app's DATABASE_URL must agree.
+      - POSTGRES_USER
+      - POSTGRES_PASSWORD
+      - POSTGRES_DB
+    volumes:
+      - allen-pgdata:/var/lib/postgresql/data   # RECONCILE volume name against live
+
+  caddy:
+    image: caddy:2                       # RECONCILE against live tag
+    container_name: allen-caddy-1
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - allen
+    volumes:
+      # RECONCILE: Caddyfile path + data/config volumes against live.
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - allen-caddy-data:/data
+      - allen-caddy-config:/config
+
+volumes:
+  allen-pgdata:
+  allen-caddy-data:
+  allen-caddy-config:
