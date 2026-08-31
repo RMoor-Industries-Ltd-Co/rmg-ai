@@ -31,6 +31,12 @@ DEFAULTS: dict[str, str] = {
         "could retry through. I've logged it. Please try again, and if it persists let me "
         "know so it can be looked at."
     ),
+    "llm_billing_failure": (
+        "I can't reach my reasoning engine right now: the Anthropic API credit balance is "
+        "exhausted. This isn't something I can retry through — it needs a top-up in the "
+        "Anthropic Console (Plans & Billing). The moment that's funded I'm back, no restart "
+        "or redeploy required."
+    ),
     "whatsapp_error": "⚠️ ALLEN hit an error processing that message. I've logged it — try again in a moment.",
     "reminder_prefix": "⏰ {message}",
     "reminder_dead_letter": (
@@ -91,9 +97,30 @@ def is_transient(exc: BaseException) -> bool:
     return isinstance(status, int) and status >= 500 or status == 429
 
 
+# A billing/credit exhaustion is a 400 that retrying can NEVER clear — it must be told
+# apart from both a transient overload (retry helps) and an opaque generic fault (hides
+# the actual cause). The Anthropic credit-balance error reads "credit balance is too low
+# ... Plans & Billing"; OpenAI's equivalent is "insufficient_quota". Kept narrow so a
+# 429 rate-limit (which IS transient) is never misread as a billing wall.
+_BILLING_MARKERS = (
+    "credit balance", "plans & billing", "insufficient_quota", "billing_hard_limit",
+    "payment required", "402",
+)
+
+
+def is_billing(exc: BaseException) -> bool:
+    text = f"{type(exc).__name__} {exc}".lower()
+    if any(m in text for m in _BILLING_MARKERS):
+        return True
+    return getattr(exc, "status_code", None) == 402
+
+
 def for_exception(exc: BaseException) -> str:
-    """The right canonical reply for a raised model/tool exception — a reassuring
-    transient-overload notice when it looks retryable, else the generic failure message."""
+    """The right canonical reply for a raised model/tool exception. Billing/credit
+    exhaustion is checked first (retrying can't clear it, and the honest cause matters),
+    then a reassuring transient-overload notice when retryable, else the generic failure."""
+    if is_billing(exc):
+        return get("llm_billing_failure")
     return get("llm_transient_failure") if is_transient(exc) else get("llm_failure_generic")
 
 

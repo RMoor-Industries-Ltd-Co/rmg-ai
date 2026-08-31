@@ -25,6 +25,29 @@ def ready() -> bool:
     return settings.anpu_reviews_ready
 
 
+def get_liveness() -> dict:
+    """Pull Anpu's worker-liveness snapshot (heartbeat age, newest-review age, pending
+    PROPOSED count, autonomy mode) from axis-tekhen's /system/anpu/liveness. Read-only.
+
+    Returns a dict; on any failure returns {'ok': False, 'error': ...} so /health's family
+    board can render it without raising. This is what lets ALLEN tell a *quiet* Anpu (fresh
+    heartbeat, nothing to triage) from a *stalled* one (heartbeat null/large)."""
+    if not ready():
+        return {"ok": False, "error": "not connected"}
+    url = settings.anpu_liveness_url or settings.anpu_reviews_url.replace("/reviews", "/liveness")
+    headers = {}
+    if settings.anpu_reviews_token:
+        headers["Authorization"] = f"Bearer {settings.anpu_reviews_token}"
+    try:
+        r = requests.get(url, headers=headers, timeout=30)
+        if r.status_code == 401:
+            return {"ok": False, "error": "auth mismatch"}
+        r.raise_for_status()
+        return {"ok": True, **r.json()}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 def handle(_name: str, _args: dict) -> str:
     if not ready():
         return "Anpu isn't connected yet."

@@ -556,10 +556,22 @@ def respond_agentic(
     # raw 500 — a calm transient-overload notice when retryable, else a generic failure.
     from . import replies
 
+    def _record_llm_fault(exc: Exception, where: str) -> None:
+        # LLM failures used to hit stdout only, so /admin/errors showed nothing during a
+        # chat outage (exactly what made the credit-exhaustion incident hard to diagnose).
+        # Persist to the onboard error log too — guarded, so a DB blip on this path can
+        # never turn a graceful failure reply into a 500.
+        try:
+            db.add_error(namespace, "llm", f"ALLEN model call failed ({where})",
+                         f"{type(exc).__name__}: {exc}")
+        except Exception:
+            pass
+
     try:
         result = _invoke()
     except Exception as exc:
         logger.error("[agent] model call failed after retries: %s", exc)
+        _record_llm_fault(exc, "primary")
         return replies.for_exception(exc)
 
     # Self-correction: an empty/blank completion is a soft failure (dropped stream, all
@@ -572,6 +584,7 @@ def respond_agentic(
                 return retry
         except Exception as exc:
             logger.error("[agent] empty-retry failed: %s", exc)
+            _record_llm_fault(exc, "empty-retry")
             return replies.for_exception(exc)
         return replies.get("llm_failure_generic")
 

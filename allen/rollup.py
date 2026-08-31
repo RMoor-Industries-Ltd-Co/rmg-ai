@@ -8,11 +8,16 @@ produced, it never triggers them to do work (matches rmg-piaar-system's reportin
 centralized through ALLIE, not peer-to-peer)."""
 
 import logging
+from datetime import datetime, timedelta, timezone
 
 from . import db, tools_anpu, tools_cappo, tools_constance, tools_thoth, tools_vale
 from .config import settings
 
 logger = logging.getLogger(__name__)
+
+# A cached per-agent report is "stale" once it's older than 2× the rollup interval
+# (the job runs every 6h), i.e. it should have refreshed at least once and didn't.
+STALE_AFTER_HOURS = 12
 
 _SOURCES = [
     ("cappo", lambda: tools_cappo.get_report(), lambda: settings.cappo_report_ready),
@@ -44,6 +49,72 @@ below. If a domain has nothing notable, say so briefly rather than padding. Neve
 anything not present in the reports.
 
 {reports}"""
+
+
+def _is_stale(fetched) -> bool:
+    """Whether a cached report's fetched_at is older than STALE_AFTER_HOURS (or missing)."""
+    if fetched is None:
+        return True
+    try:
+        dt = fetched
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - dt) > timedelta(hours=STALE_AFTER_HOURS)
+    except Exception:
+        return True
+
+
+def cached_board() -> dict:
+    """Cheap per-agent health from the last cached rollup (no network). Each configured
+    source -> {ok, fetched_at, stale}; unconfigured -> {configured: False}. This is what
+    /health returns by default so 'is my whole AI family healthy' is one call."""
+    rows = {r["source"]: r for r in db.list_agent_reports()}
+    board: dict = {}
+    for source, _fetch, is_ready in _SOURCES:
+        if not is_ready():
+            board[source] = {"configured": False}
+            continue
+        row = rows.get(source)
+        if not row:
+            board[source] = {"configured": True, "ok": None, "fetched_at": None, "stale": True}
+            continue
+        fetched = row.get("fetched_at")
+        board[source] = {
+            "configured": True,
+            "ok": bool(row.get("ok")),
+            "fetched_at": fetched.isoformat() if hasattr(fetched, "isoformat") else fetched,
+            "stale": _is_stale(fetched),
+        }
+    return board
+
+
+def live_probe() -> dict:
+    """Live per-agent reachability, computed on demand for /health?verify=true. Calls the
+    same pull helpers the rollup uses but never caches — a real-time family board."""
+    board: dict = {}
+    for source, fetch, is_ready in _SOURCES:
+        if not is_ready():
+            board[source] = {"configured": False}
+            continue
+        try:
+            text = fetch()
+            board[source] = {"configured": True, "ok": not _pull_failed(text)}
+        except Exception as exc:
+            board[source] = {"configured": True, "ok": False, "error": str(exc)}
+    return board
+
+
+def board_status(board: dict) -> str:
+    """Summarize a board: 'ok' iff every configured source is ok and not stale, else
+    'degraded' (or 'unconfigured' when no source is wired). Kept separate from ALLEN's
+    top-level /health status so a downstream fault never masks ALLEN core as degraded."""
+    configured = [v for v in board.values() if v.get("configured")]
+    if not configured:
+        return "unconfigured"
+    for v in configured:
+        if v.get("ok") is not True or v.get("stale"):
+            return "degraded"
+    return "ok"
 
 
 def refresh() -> None:
