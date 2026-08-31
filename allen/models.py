@@ -9,6 +9,10 @@ OutputKind = Literal["content", "ad", "post", "newsletter", "book"]
 class CreateProjectRequest(BaseModel):
     name: str
     namespace: str
+    #: MCP privilege scope this key runs at — 'allen' or 'allie' (registry.SCOPES).
+    #: Omitted or blank leaves the column NULL, so the key follows the process-wide
+    #: MCP_SCOPE exactly as every key issued before per-key scope existed does.
+    mcp_scope: Optional[str] = None
 
 
 # ---- usage & cost tracking ("$" console dashboard) — external ingestion ----

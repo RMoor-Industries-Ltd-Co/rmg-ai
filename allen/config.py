@@ -7,6 +7,11 @@ class Settings(BaseSettings):
     # Auth — shared key required on /draft, /speak, /listen (blank = open).
     allen_api_key: str = ""
     admin_api_key: str = ""  # mints per-project API keys via POST /projects
+    # Privilege scope an MCP client runs at (see mcp_server.py). "allie" is the business
+    # profile — the gatekeeper rule, Rahm's PERSONAL systems out of reach — and is the
+    # deliberate default: an MCP key lives in client software, not in Rahm's head. Widen to
+    # "allen" only for a client that genuinely needs overseer reach.
+    mcp_scope: str = "allie"
 
     # Platform data layer (projects + namespaced memory). Blank = stateless mode.
     database_url: str = ""
@@ -165,6 +170,12 @@ class Settings(BaseSettings):
     thoth_ingest_url: str = ""               # e.g. https://axis-tekhen.rmasters.group/api/stocks/thoth/signals
     thoth_ingest_token: str = ""             # shared secret, must match axis-tekhen's THOTH_INGEST_TOKEN
     youtube_data_api_key: str = ""           # YouTube Data API v3 key — separate from yt-dlp ingest, needed for search
+    # RSS mover wires (allen/rss_movers.py). No credentials, so unlike the
+    # YouTube source this one is available by default — and it is the source
+    # that actually covers the overnight/pre-market flow the opening rush trades
+    # off. Each feed reports under its own source name so axis-tekhen scores
+    # them separately.
+    rss_movers_enabled: bool = True
 
     # Anpu — axis-tekhen's autonomous LLM oversight agent. Pull-only: ALLIE reads Anpu's
     # already-persisted structured reviews; ALLIE never triggers Anpu to run (Anpu is its own

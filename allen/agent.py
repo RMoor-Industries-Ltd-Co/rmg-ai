@@ -5,11 +5,10 @@ DELEGATES to ALLIE behind the scenes, then synthesizes her findings into his own
 This wraps chat.build_system/build_user (ALLEN's exact persona) in a tool-use loop whose only tool,
 for now, is delegate_to_allie. As ALLIE gains ClickUp/Notion tools, ALLEN's reach grows for free."""
 
-import json
 import logging
 from typing import Optional
 
-from . import allie, chat, db, forms
+from . import allie, chat, db
 from .llm import get_llm
 
 logger = logging.getLogger(__name__)
@@ -396,22 +395,6 @@ def _build_delegation_note(
     return note
 
 
-# Substrings that mark a fault-shaped tool RESULT (tools return error strings, not exceptions).
-# Matched only against the head of the result to avoid flagging legit content that mentions "error".
-_FAULT_MARKERS = (
-    "api error", "call failed", "isn't configured", "is not configured", "not configured",
-    "(unknown ", "ingest failed", "could not create", "could not reach", "failed:", "error code",
-    "denied", "invalid or missing", "no refresh token", "not connected", "isn't connected",
-)
-
-
-def _looks_like_fault(res: str) -> bool:
-    if not res:
-        return False
-    head = res[:200].lower()
-    return any(m in head for m in _FAULT_MARKERS)
-
-
 def _format_errors(rows: list) -> str:
     if not rows:
         return "The error log is empty — no faults recorded."
@@ -469,78 +452,34 @@ def respond_agentic(
     tool_scope: Optional[set[str]] = None,
     conversation_id: Optional[str] = None,
 ) -> str:
-    from . import (
-        tools_calendar,
-        tools_clickup,
-        tools_gdrive,
-        tools_github,
-        tools_gmail,
-        tools_notion,
-        tools_web,
-        tools_youtube,
-    )
+    from . import registry
     from .config import settings
 
-    # tool_scope=None → full interactive tool set (unchanged). A scoped call (e.g. the
-    # scheduled morning brief) attaches only the named categories, so a background job
-    # doesn't pay to send the full GitHub/Drive/YouTube/forms schemas it never uses. The
-    # delegation note is built from the SAME effective flags, preserving the invariant that
-    # it only describes tools actually attached this turn.
-    full = tool_scope is None
-
-    def want(cat: str) -> bool:
-        return full or cat in tool_scope
-
-    calendar_on = tools_calendar.ready() and want("calendar")
-    youtube_on = tools_youtube.any_ready() and want("youtube")
-    gdrive_on = tools_gdrive.ready() and want("gdrive")
-    clickup_on = settings.clickup_ready and want("clickup")
-    notion_on = settings.notion_ready and want("notion")
-    github_on = settings.github_ready and want("github")
-    gmail_on = tools_gmail.ready() and want("gmail")
-    reminders_on = bool(settings.whatsapp_ready and settings.database_url) and want("reminders")
-    web_on = want("web")
-    forms_on = want("forms")
-
-    tools = list(ALLEN_TOOLS)
-    if reminders_on:
-        tools += REMINDER_TOOLS  # push alerts + scheduled WhatsApp reminders
-    if clickup_on:
-        tools += tools_clickup.TOOLS  # read tools always; writes only on full (interactive) calls
-        if full:
-            tools += tools_clickup.WRITE_TOOLS  # full CRUD across all ClickUp spaces (personal + RMG/RMI + AMG)
-    if notion_on:
-        tools += tools_notion.TOOLS
-    if calendar_on:
-        tools += tools_calendar.TOOLS  # ALLEN manages Rahm's personal calendar
-    if web_on:
-        tools += tools_web.TOOLS  # web fetch (full interactive set)
-    if youtube_on:
-        tools += tools_youtube.available_tools()  # ingest (save) + transcript library (read)
-    if gdrive_on:
-        tools += tools_gdrive.TOOLS  # Drive read + CRUD (TOOLS already includes WRITE_TOOLS)
-    if github_on:
-        tools += tools_github.TOOLS + tools_github.WRITE_TOOLS  # allen-piaar-control-bot — PIAAR org visibility
-    if gmail_on:
-        tools += tools_gmail.TOOLS  # ALLEN's real email — search/read/send/reply/archive across Rahm's accounts
-
-    if forms_on:
-        forms.ensure_seed_forms(namespace)
-        tools += forms.build_tool_schemas(namespace) + forms.META_TOOLS
+    # tool_scope=None → full interactive tool set. A scoped call (e.g. the scheduled
+    # morning brief) attaches only the named categories, so a background job doesn't pay
+    # to send the full GitHub/Drive/YouTube/forms schemas it never uses. The tool list and
+    # the delegation note are built from the SAME registry.readiness() flags, preserving
+    # the invariant that the note only describes tools actually attached this turn.
+    on = registry.readiness(tool_scope)
+    tools = registry.build_tools("allen", namespace, categories=tool_scope)
 
     delegation_note = _build_delegation_note(
-        clickup_ready=clickup_on, notion_ready=notion_on,
-        calendar_ready=calendar_on, youtube_ready=youtube_on,
-        gdrive_ready=gdrive_on, github_ready=github_on, gmail_ready=gmail_on,
-        reminders_ready=reminders_on, forms_ready=forms_on,
-        rmi_vault_ready=(clickup_on and gdrive_on and bool(settings.rmi_vault_folder_id)),
+        clickup_ready=on["clickup"], notion_ready=on["notion"],
+        calendar_ready=on["calendar"], youtube_ready=on["youtube"],
+        gdrive_ready=on["gdrive"], github_ready=on["github"], gmail_ready=on["gmail"],
+        reminders_ready=on["reminders"], forms_ready=on["forms"],
+        rmi_vault_ready=(on["clickup"] and on["gdrive"] and bool(settings.rmi_vault_folder_id)),
         vault_folder_id=settings.rmi_vault_folder_id,
         amg_legal_folder_id=settings.amg_legal_agreements_folder_id,
     )
     system = chat.build_system(None, None, context) + delegation_note
     messages = [{"role": "user", "content": chat.build_user(message, history)}]
 
-    def _dispatch(name: str, inp: dict) -> str:
+    def _builtins(name: str, inp: dict) -> str:
+        """ALLEN's own built-ins — the tools that need this turn's closure state (the
+        console conversation id, the ALLIE handle) and so can't live in the registry.
+        Everything else (ClickUp, Notion, calendar, web, YouTube, Drive, GitHub, Gmail,
+        forms) is routed and audited by registry.dispatch before reaching here."""
         if name == "log_error":
             db.add_error(namespace, inp.get("source") or "allen", inp.get("summary", ""), inp.get("detail", ""))
             return "Fault recorded to the error log."
@@ -572,87 +511,25 @@ def respond_agentic(
         if name == "cancel_reminder":
             ok = db.cancel_reminder(namespace, inp.get("reminder_id", ""))
             return "Cancelled." if ok else "No pending reminder with that id."
-        if name.startswith("clickup_"):
-            res = tools_clickup.handle(name, inp, scope="all")  # ALLEN direct = full reach (personal + RMG/RMI + AMG)
-            if name in tools_clickup.WRITE_NAMES:
-                db.add_audit(namespace, "allen", name, json.dumps(inp), res)
-            return res
-        if name.startswith("notion_"):
-            return tools_notion.handle(name, inp)  # ALLEN sees all Notion (overseer)
-        if name.startswith("calendar_"):
-            res = tools_calendar.handle(name, inp)
-            if name in tools_calendar.WRITE_NAMES:
-                db.add_audit(namespace, "allen", name, json.dumps(inp), res)
-            return res
-        if name.startswith("web_"):
-            return tools_web.run_tool(name, inp)
-        if name.startswith("youtube_"):
-            return tools_youtube.handle(name, inp)
-        if name.startswith("drive_"):
-            res = tools_gdrive.handle(name, inp)
-            if name in tools_gdrive.WRITE_NAMES:
-                db.add_audit(namespace, "allen", name, json.dumps(inp), res)
-            return res
-        if name.startswith("github_"):
-            res = tools_github.handle(name, inp)
-            if name in tools_github.WRITE_NAMES:
-                db.add_audit(namespace, "allen", name, json.dumps(inp), res)
-            return res
-        if name.startswith("gmail_"):
-            res = tools_gmail.handle(name, inp)
-            if name in tools_gmail.WRITE_NAMES:
-                db.add_audit(namespace, "allen", name, json.dumps(inp), res)
-            return res
-        if name == "list_virtual_forms":
-            return forms.list_forms_summary(namespace)
-        if name == "define_virtual_form":
-            res = forms.define_form(namespace, inp)
-            db.add_audit(namespace, "allen", name, json.dumps(inp), res)
-            return res
-        if name.startswith("submit_form_"):
-            res = forms.dispatch_submit(namespace, name, inp)
-            db.add_audit(namespace, "allen", name, json.dumps(inp), res)
-            return res
         return f"(unknown tool: {name})"
 
-    # Which tools constitute actually DOING something (a write / side effect) vs a read. Used by
-    # the confabulation guard below to tell "he did it" from "he only said he did."
-    _write_names = (
-        set(getattr(tools_gdrive, "WRITE_NAMES", set()))
-        | set(getattr(tools_calendar, "WRITE_NAMES", set()))
-        | set(getattr(tools_clickup, "WRITE_NAMES", set()))
-        | set(getattr(tools_github, "WRITE_NAMES", set()))
-        | set(getattr(tools_gmail, "WRITE_NAMES", set()))
-    )
-    _action_singletons = {"delegate_to_allie", "send_alert", "schedule_reminder", "cancel_reminder",
-                          "youtube_ingest", "define_virtual_form", "set_conversation_folder"}
+    # Side effects performed this turn — read by the confabulation guard below to tell
+    # "he did it" from "he only said he did."
     _turn = {"actions": 0}
 
-    def _is_action(name: str) -> bool:
-        return (
-            name in _write_names
-            or name in _action_singletons
-            or name.startswith("submit_form_")
-            or (name.startswith("notion_") and any(k in name for k in ("create", "update", "append", "add", "delete", "move")))
-        )
-
     def runner(name: str, inp: dict) -> str:
-        # Wrap every tool call: a raised exception or a fault-shaped result is recorded to the
-        # onboard error log automatically, so a fault leaves a trail even if the model glosses
-        # over it. The HONESTY directive tells ALLEN to also surface it and never claim success.
+        # registry.dispatch owns the audit trail and the fault capture: a raised exception
+        # or a fault-shaped result is recorded to the onboard error log automatically, so a
+        # fault leaves a trail even if the model glosses over it. The HONESTY directive
+        # tells ALLEN to also surface it and never claim success.
         inp = inp or {}
-        try:
-            res = _dispatch(name, inp)
-        except Exception as exc:
-            logger.error("[agent] tool %s raised: %s", name, exc)
-            db.add_error(namespace, name, f"tool {name} raised an exception", f"{type(exc).__name__}: {exc}")
-            from . import replies
-
-            return replies.get("tool_error_generic", error=str(exc)[:200])
-        if name not in ("log_error", "read_error_log", "review_activity") and _looks_like_fault(res):
-            db.add_error(namespace, name, f"tool {name} reported a fault", (res or "")[:1000])
-        elif _is_action(name):
-            _turn["actions"] += 1  # a real side effect happened this turn
+        res = registry.dispatch(
+            name, inp, scope="allen", namespace=namespace, actor="allen", fallback=_builtins,
+        )
+        # A fault-shaped result is NOT a completed action — counting it would let a failed
+        # write satisfy the confabulation guard and wave through a false "done".
+        if registry.is_action(name) and not registry.looks_like_fault(res):
+            _turn["actions"] += 1
         return res
 
     llm = get_llm()

@@ -22,6 +22,22 @@ def run_feed_watch() -> None:
         return
 
     signals = tools_market_feed.scan_yfinance_movers(tickers)
+
+    # RSS mover wires. No credentials, so this source is always available --
+    # and it is the one that actually covers the overnight/pre-market flow a
+    # day trader works the open off. Each feed reports under its own source
+    # name so axis-tekhen can score them separately; collapsing them to "rss"
+    # would only ever tell us whether RSS-as-a-category is any good, which is
+    # not an actionable answer.
+    if settings.rss_movers_enabled:
+        try:
+            from . import rss_movers
+
+            signals += rss_movers.scan_rss_movers(universe=tickers)
+        except Exception as exc:
+            # A broken wire must not cost us the sources that did work.
+            logger.warning("[feed_watch] RSS source failed this pass: %s", exc)
+
     if settings.youtube_search_ready:
         signals += tools_market_feed.scan_youtube_finance_mentions(tickers)
     else:

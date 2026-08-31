@@ -24,6 +24,24 @@ pip install -r requirements.txt   # install deps
 uvicorn allen.main:app --reload   # dev server → http://localhost:8090
 ```
 
+## PIAAR MCP
+
+ALLEN hosts the PIAAR MCP server at `/mcp` (`allen/mcp_server.py`). Because every
+`tools_*.py` module already emits `{"name", "description", "input_schema"}` — MCP's
+`tools/list` shape with one key renamed — and `config.py` already holds every sibling
+agent's URL and key, one server here exposes the whole fleet without the sibling repos
+changing a line.
+
+```bash
+claude mcp add --transport http piaar https://allen.i.verse.rmasters.group/mcp \
+  --header "x-allen-key: <an ALLEN project key>"
+```
+
+Scope is the privilege boundary, set by `MCP_SCOPE` (default `allie` — business only,
+Rahm's personal systems unreachable). Call `piaar_whoami` first: it reports the project,
+the scope, and every tool that scope grants, so a missing tool is immediately
+distinguishable from an unconfigured integration.
+
 ## Git
 
 - Active development branch: `claude/eager-bohr-w283ly`
@@ -106,7 +124,9 @@ Never paste real secret values into chat or any committed file.
 
 | File | Purpose |
 |---|---|
-| `allen/main.py` | FastAPI app, mounts static files and router |
+| `allen/main.py` | FastAPI app, mounts static files, the router, and the MCP server at `/mcp`. Startup/shutdown is ONE combined lifespan — FastMCP needs its lifespan on the FastAPI constructor, and FastAPI ignores `@app.on_event` once `lifespan=` is set, so the old `on_event` handlers had to move or the scheduler would have silently stopped |
+| `allen/registry.py` | **Shared tool registry** — the single place ALLEN, ALLIE and the MCP server assemble tool schemas and execute a call. Scope IS the privilege boundary (`allen` = overseer, `allie` = gatekeeper rule); `dispatch()` is the only path to a tool, so the audit row on a write and the error-log entry on a fault can't be bypassed |
+| `allen/mcp_server.py` | **PIAAR MCP server** (FastMCP, Streamable HTTP at `/mcp`) — publishes the registry to any MCP client. Auth reuses `x-allen-key` (constant-time) and FAILS CLOSED; runs at `MCP_SCOPE` (default `allie`). Gmail/GitHub-writes/forms/alerts are withheld in v1 |
 | `allen/web.py` | ALLEN I VERSE console routes (served at `/`) |
 | `allen/agent.py` | ALLEN agentic loop + tool dispatch |
 | `allen/allie.py` | ALLIE — ALLEN's in-process business-ops sub-agent (RMG + RMI, plus direct AMG ClickUp access; Cappo remains her deeper-AMG execution agent) |
