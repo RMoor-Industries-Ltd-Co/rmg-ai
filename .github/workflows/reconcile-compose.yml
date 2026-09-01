@@ -1,0 +1,178 @@
+name: Reconcile ALLEN compose env pass-through
+
+# MANUAL ONLY (workflow_dispatch). Reconciles the live server's
+# /home/deploy/allen/docker-compose.yml so the `allen` service's environment
+# pass-through matches the source-of-truth block in infra/docker-compose.prod.yml,
+# WITHOUT touching db / caddy / volumes / any other server-specific config.
+# Fixes the #69/#70 downstream board that reports `configured: false` because the
+# untracked server compose never named the downstream vars.
+#
+# Two modes:
+#   plan  (default) — READ-ONLY. Backs up the live file, then reports (NAMES ONLY)
+#                     the live env mechanism (env_file vs environment block vs inline
+#                     values) and which required names are missing. No edit, no redeploy.
+#   apply           — Patches ONLY the allen env pass-through (adds missing names in the
+#                     style the live file already uses), then redeploys with
+#                     `doppler run -- docker compose up -d --force-recreate allen`,
+#                     tails logs, and prints /health downstream booleans.
+#
+# Guarantees: never prints secret VALUES; never changes Doppler; never rotates keys;
+# never edits db/caddy; always backs up the live file first (both modes). Run `plan`
+# and review its output before ever running `apply`.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "plan = preview only (safe, no changes). apply = patch + redeploy."
+        type: choice
+        options: [plan, apply]
+        default: plan
+      confirm:
+        description: "apply ONLY: type RECONCILE to confirm patching production."
+        type: string
+        default: ""
+
+# Share deploy.yml's concurrency group so a reconcile can never race an image deploy.
+concurrency:
+  group: deploy-allen
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Guard apply confirmation
+        if: ${{ inputs.mode == 'apply' && inputs.confirm != 'RECONCILE' }}
+        run: |
+          echo "::error::mode=apply requires confirm=RECONCILE. Aborting so production is never patched by accident."
+          exit 1
+
+      - name: Extract authoritative env NAMES from repo compose (names only)
+        run: |
+          python3 -m pip install --quiet pyyaml
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import yaml
+          d = yaml.safe_load(open("infra/docker-compose.prod.yml"))
+          env = d["services"]["allen"]["environment"]
+          names = []
+          for e in env:
+              if isinstance(e, str):
+                  names.append(e.split("=", 1)[0])
+              elif isinstance(e, dict):
+                  names.extend(e.keys())
+          # Variable NAMES are not secrets; values never leave Doppler / the server.
+          print("ALLEN_ENV_NAMES=" + ",".join(names))
+          PY
+
+      - name: "Reconcile (${{ inputs.mode }}) on ALLEN server"
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.CONTROL_HOST }}
+          username: ${{ secrets.CONTROL_USER }}
+          key: ${{ secrets.CONTROL_SSH_KEY }}
+          envs: DOPPLER_TOKEN,ALLEN_ENV_NAMES,MODE
+          script: |
+            set -euo pipefail
+            cd ~/allen
+            COMPOSE=docker-compose.yml
+            test -f "$COMPOSE" || { echo "::error::$PWD/$COMPOSE not found on server"; exit 1; }
+
+            # Always back up first (plan AND apply), timestamped, never overwritten.
+            BAK="docker-compose.yml.bak.$(date +%F-%H%M%S)"
+            cp "$COMPOSE" "$BAK"
+            echo "Backed up live compose -> ~/allen/$BAK"
+
+            # In-place analyze/patch. Emits NAMES ONLY; any inline value is redacted.
+            python3 - "$COMPOSE" "$MODE" <<'PY'
+            import sys, re, os
+            path, mode = sys.argv[1], sys.argv[2]
+            required = [n for n in os.environ.get("ALLEN_ENV_NAMES", "").split(",") if n]
+            lines = open(path).read().splitlines()
+
+            # Locate the `allen:` service (2-space-indented key under services:).
+            ai = next((i for i, l in enumerate(lines) if re.match(r'^  allen:\s*$', l)), -1)
+            if ai < 0:
+                print("::error::could not find the `allen:` service in the live compose"); sys.exit(1)
+            j = ai + 1
+            while j < len(lines):
+                if re.match(r'^  \S', lines[j]) and not lines[j].startswith('    '):
+                    break
+                j += 1
+            block = lines[ai:j]  # the allen service, exclusive of the next service
+
+            has_env_file = any(re.match(r'^    env_file:', b) for b in block)
+            env_rel = next((k for k, b in enumerate(block) if re.match(r'^    environment:\s*$', b)), -1)
+
+            existing, style, item_indent, inline_seen = set(), "interp", "      ", False
+            if env_rel >= 0:
+                k = env_rel + 1
+                while k < len(block) and (block[k].startswith('      ') or block[k].strip() == ''):
+                    m = re.match(r'^(\s*)-\s*([A-Za-z_][A-Za-z0-9_]*)(=(.*))?\s*$', block[k])
+                    if m:
+                        item_indent = m.group(1); existing.add(m.group(2))
+                        if m.group(3) is None:
+                            style = "bare"
+                        elif '${' in (m.group(4) or ''):
+                            style = "interp"
+                        else:
+                            style = "inline"; inline_seen = True
+                    k += 1
+
+            missing = [n for n in required if n not in existing]
+
+            print("=== ALLEN env reconciliation plan ===")
+            print(f"live mechanism : env_file={has_env_file}  environment_block={'yes' if env_rel>=0 else 'no'}  item_style={style}")
+            print(f"required={len(required)}  present_in_environment={len(existing)}  missing={len(missing)}")
+            print("missing names  : " + (", ".join(missing) if missing else "(none)"))
+            if inline_seen:
+                print("::warning::live environment uses INLINE values for some vars; apply preserves them and only ADDS missing names.")
+            if has_env_file:
+                print("::warning::live allen service uses env_file; values may resolve from a server .env. If deploy.yml (plain `docker compose up`) is the primary path, durability may also need the names in that .env or deploy.yml switched to `doppler run` — review plan before apply.")
+
+            if mode != "apply":
+                print("PLAN ONLY — no changes written, no redeploy."); sys.exit(0)
+            if not missing:
+                print("environment already complete — nothing to add."); sys.exit(0)
+
+            # APPLY: insert missing names in the matching style, minimal text edit only.
+            def render(n):
+                return f"{item_indent}- {n}" if style == "bare" else f"{item_indent}- {n}=${{{n}:-}}"
+            add = [render(n) for n in missing]
+            if env_rel < 0:
+                ins = ai + 1
+                out = lines[:ins] + ["    environment:"] + add + lines[ins:]
+            else:
+                abs_env = ai + env_rel
+                last = abs_env
+                k = abs_env + 1
+                while k < j and (lines[k].startswith('      ') or lines[k].strip() == ''):
+                    if lines[k].strip():
+                        last = k
+                    k += 1
+                out = lines[:last + 1] + add + lines[last + 1:]
+            open(path, "w").write("\n".join(out) + "\n")
+            print(f"Added {len(add)} missing name(s) to allen.environment in '{style}' style.")
+            PY
+
+            if [ "$MODE" = "apply" ]; then
+              echo "=== validate compose syntax (doppler run -- docker compose config -q) ==="
+              doppler run -- docker compose config -q
+              echo "=== redeploy: doppler run -- docker compose up -d --force-recreate allen ==="
+              doppler run -- docker compose up -d --force-recreate allen
+              sleep 12
+              echo "=== allen logs (last 20) ==="
+              docker compose logs --tail=20 allen || true
+              echo "=== /health?verify=true downstream booleans (no secrets) ==="
+              curl -s "https://allen.i.verse.rmasters.group/health?verify=true" \
+                | python3 -c "import sys,json;d=json.load(sys.stdin);print('status:',d.get('status'),'| llm:',d.get('checks',{}).get('llm'),'| downstream_status:',d.get('downstream_status'));[print('  ',k,'->',(v.get('configured') if isinstance(v,dict) else v)) for k,v in (d.get('downstream') or {}).items()]"
+            fi
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          ALLEN_ENV_NAMES: ${{ env.ALLEN_ENV_NAMES }}
+          MODE: ${{ inputs.mode }}
