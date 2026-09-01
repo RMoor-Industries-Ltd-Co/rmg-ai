@@ -142,7 +142,12 @@ jobs:
 
             # APPLY: insert missing names in the matching style, minimal text edit only.
             def render(n):
-                return f"{item_indent}- {n}" if style == "bare" else f"{item_indent}- {n}=${{{n}:-}}"
+                # NOTE: build the ${VAR:-} form by concatenation so the workflow source never
+                # contains a dollar-double-brace sequence, which GitHub Actions would try to
+                # parse as an expression even inside this shell heredoc.
+                if style == "bare":
+                    return item_indent + "- " + n
+                return item_indent + "- " + n + "=${" + n + ":-}"
             add = [render(n) for n in missing]
             if env_rel < 0:
                 ins = ai + 1
