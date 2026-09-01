@@ -88,6 +88,13 @@ jobs:
             cp "$COMPOSE" "$BAK"
             echo "Backed up live compose -> ~/allen/$BAK"
 
+            # Variable NAMES present in the Doppler-injected server env (values stripped with
+            # sed and NEVER printed). Used to filter the add-list: a bare `- NAME` is added ONLY
+            # if Doppler actually provides a value, so we never inject an empty string that would
+            # override a config.py default and cause a subtle regression.
+            DOPPLER_NAMES="$(doppler run -- printenv | sed 's/=.*//' | sort -u | tr '\n' ',')"
+            export DOPPLER_NAMES
+
             # In-place analyze/patch. Emits NAMES ONLY; any inline value is redacted.
             python3 - "$COMPOSE" "$MODE" <<'PY'
             import sys, re, os
@@ -126,10 +133,20 @@ jobs:
 
             missing = [n for n in required if n not in existing]
 
+            # Doppler-presence filter (option A): only add a bare name that Doppler actually
+            # provides a value for. Names absent from Doppler are SKIPPED so their config.py
+            # default stays in force (a bare `- NAME` with no value could blank that default).
+            doppler_present = {n for n in os.environ.get("DOPPLER_NAMES", "").split(",") if n}
+            safe_to_add = [n for n in missing if n in doppler_present]
+            skipped = [n for n in missing if n not in doppler_present]
+
             print("=== ALLEN env reconciliation plan ===")
             print(f"live mechanism : env_file={has_env_file}  environment_block={'yes' if env_rel>=0 else 'no'}  item_style={style}")
             print(f"required={len(required)}  present_in_environment={len(existing)}  missing={len(missing)}")
-            print("missing names  : " + (", ".join(missing) if missing else "(none)"))
+            print(f"missing & IN Doppler (safe to add) = {len(safe_to_add)}")
+            print("  safe to add  : " + (", ".join(safe_to_add) if safe_to_add else "(none)"))
+            print(f"missing & NOT in Doppler (skipped, keep config default) = {len(skipped)}")
+            print("  skipped      : " + (", ".join(skipped) if skipped else "(none)"))
             if inline_seen:
                 print("::warning::live environment uses INLINE values for some vars; apply preserves them and only ADDS missing names.")
             if has_env_file:
@@ -137,8 +154,8 @@ jobs:
 
             if mode != "apply":
                 print("PLAN ONLY — no changes written, no redeploy."); sys.exit(0)
-            if not missing:
-                print("environment already complete — nothing to add."); sys.exit(0)
+            if not safe_to_add:
+                print("nothing safe to add (all missing names are absent from Doppler)."); sys.exit(0)
 
             # APPLY: insert missing names in the matching style, minimal text edit only.
             def render(n):
@@ -148,7 +165,7 @@ jobs:
                 if style == "bare":
                     return item_indent + "- " + n
                 return item_indent + "- " + n + "=${" + n + ":-}"
-            add = [render(n) for n in missing]
+            add = [render(n) for n in safe_to_add]
             if env_rel < 0:
                 ins = ai + 1
                 out = lines[:ins] + ["    environment:"] + add + lines[ins:]
