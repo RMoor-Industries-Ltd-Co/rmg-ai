@@ -126,6 +126,8 @@ services:
       - ANPU_LIVENESS_URL   # downstream agent board
       - THOTH_STATUS_URL   # downstream agent board
       - THOTH_STATUS_TOKEN   # downstream agent board
+      - PIAAR_SERVEROPS_ENDPOINT   # server-ops, over Tailscale — ALLEN-only
+      - PIAAR_KEY_SERVEROPS_ALLEN   # server-ops, over Tailscale — ALLEN-only
       - CAPPO_REPORT_URL   # downstream agent board
       - CONSTANCE_REPORT_URL   # downstream agent board
       - VALE_REPORT_URL   # downstream agent board

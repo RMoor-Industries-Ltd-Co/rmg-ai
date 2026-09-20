@@ -190,6 +190,14 @@ class Settings(BaseSettings):
     thoth_status_url: str = ""     # e.g. https://axis-tekhen.rmasters.group/api/stocks/thoth/candidates
     thoth_status_token: str = ""   # optional bearer token, if required
 
+    # server-ops (rmg-piaar-mcps) — read-only infrastructure inspection for registered hosts
+    # (piaar-preview first). Reached over a Tailscale route, not a public endpoint — see
+    # rmg-piaar-mcps's docs/adr/0003-server-ops-mcp.md Decision 3. ALLEN is the only granted
+    # caller (config/server-ops/authz.json on that side); this is not a general MCP client,
+    # just enough to call the 13 read-only tools that caller is granted.
+    piaar_serverops_endpoint: str = ""   # e.g. http://<piaar-preview tailnet IP>:8793/mcp
+    piaar_key_serverops_allen: str = ""  # sent as the x-piaar-key header, never logged
+
     # Cappo's cached executive report (distinct from cappo_agent_url, which is the live
     # delegate_to_cappo task endpoint). Defaults to the same host's /api/agent/report.
     cappo_report_url: str = ""     # e.g. https://cappo.apex-meridian-group.com/api/agent/report
@@ -287,6 +295,10 @@ class Settings(BaseSettings):
     @property
     def thoth_status_ready(self) -> bool:
         return bool(self.thoth_status_url)
+
+    @property
+    def server_ops_ready(self) -> bool:
+        return bool(self.piaar_serverops_endpoint and self.piaar_key_serverops_allen)
 
     @property
     def cappo_report_ready(self) -> bool:

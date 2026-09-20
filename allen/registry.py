@@ -110,6 +110,7 @@ def readiness(categories: Optional[set[str]] = None) -> dict:
         "reminders": bool(settings.whatsapp_ready and settings.database_url) and want("reminders"),
         "web": want("web"),
         "forms": want("forms"),
+        "server_ops": settings.server_ops_ready and want("server_ops"),
     }
 
 
@@ -152,6 +153,10 @@ def _allen_tools(namespace: str, on: dict) -> list:
     if on["forms"]:
         forms.ensure_seed_forms(namespace)
         tools += forms.build_tool_schemas(namespace) + forms.META_TOOLS
+    if on["server_ops"]:
+        from . import tools_server_ops
+
+        tools += tools_server_ops.TOOLS  # read-only host inspection — ALLEN only, never ALLIE
     return tools
 
 
@@ -375,6 +380,13 @@ def _dispatch_allen(name: str, inp: dict, namespace: str, actor: str):
         if name in tools_gmail.WRITE_NAMES:
             _audit(namespace, actor, name, json.dumps(inp), res)
         return res
+    if name == "server_ops_whoami" or name.startswith("server_") or name in (
+        "list_authorized_key_fingerprints",
+        "verify_directory_access",
+    ):
+        from . import tools_server_ops
+
+        return tools_server_ops.handle(name, inp)  # read-only; server-ops itself denies anything else
     if name == "list_virtual_forms":
         return forms.list_forms_summary(namespace)
     if name == "define_virtual_form":
