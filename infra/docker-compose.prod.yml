@@ -128,11 +128,60 @@ services:
       - THOTH_STATUS_TOKEN   # downstream agent board
       - PIAAR_SERVEROPS_ENDPOINT   # server-ops, over Tailscale — ALLEN-only
       - PIAAR_KEY_SERVEROPS_ALLEN   # server-ops, over Tailscale — ALLEN-only
+      # Not a Doppler secret — a fixed deploy-time topology value naming the sidecar service
+      # below by its compose DNS name, so it's an inline literal here rather than a passed-
+      # through host env var (the pattern every other line in this block uses, all of which
+      # ARE secrets). See tools_server_ops.py's `_call()` — used for that one client only,
+      # never a container-wide proxy.
+      - PIAAR_SERVEROPS_PROXY=http://tailscale-serverops:1055
       - CAPPO_REPORT_URL   # downstream agent board
       - CONSTANCE_REPORT_URL   # downstream agent board
       - VALE_REPORT_URL   # downstream agent board
       # Optional OS-level timezone for DAILY_REPORT_TIME (not a Settings field; uncomment to pin):
       # - TZ
+
+  # Tailscale sidecar — gives `allen` a way to reach server-ops (rmg-piaar-mcps#22) over the
+  # tailnet WITHOUT `network_mode: host` on the `allen` service. host mode was considered and
+  # rejected: it would pull `allen` off the compose bridge network entirely, breaking the two
+  # things that network already does for it — Caddy resolving it as `allen:8090` for ingress,
+  # and `allen` itself resolving `db` for DATABASE_URL — since neither `caddy` nor `db` would
+  # also need to move to host networking just to keep talking to it. This sidecar instead joins
+  # the same default compose network as everyone else (no `networks:`/`network_mode` overrides
+  # here at all) and exposes only an HTTP forward proxy on that internal network; `allen` reaches
+  # it at `PIAAR_SERVEROPS_PROXY` above, scoped to just the server-ops client
+  # (`tools_server_ops.py`), never a whole-container proxy. Caddy, `db`, and every other existing
+  # dependency are completely untouched by this.
+  #
+  # Not started by the routine `doppler run -- docker compose up -d --force-recreate allen`
+  # redeploy (infra/start.sh) — that command names only the `allen` service, deliberately, since
+  # this sidecar's image changes far less often than ALLEN's own. Start it once after this file
+  # first reaches the server: `doppler run -- docker compose up -d tailscale-serverops`.
+  #
+  # RECONCILE before first deploy: the exact TS_* environment variable names below are the
+  # HTTP-forward-proxy sidecar shape Tailscale's own Docker image documents, but this was
+  # authored without a live container to verify them against — confirm current names/behavior
+  # against Tailscale's own image docs before running this for real, rather than trusting this
+  # comment blind.
+  tailscale-serverops:
+    image: tailscale/tailscale:stable
+    container_name: allen-tailscale-serverops-1
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    environment:
+      # Reusable or ephemeral auth key for THIS sidecar's own tailnet identity — distinct from
+      # PIAAR_SERVEROPS_SSH_KEY_PIAAR_PREVIEW (that's server-ops's own outbound SSH key to
+      # piaar-preview, a different system entirely). Doppler secret, allen-i-verse/prd.
+      - TS_AUTHKEY
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_HOSTNAME=allen-serverops-egress
+      # Userspace networking + an HTTP forward proxy on the internal compose network, rather
+      # than a TUN device routing the whole container's traffic — narrower purpose, narrower
+      # capability footprint than a full tailnet node would need for this one job.
+      - TS_USERSPACE=true
+      - TS_OUTBOUND_HTTP_PROXY_LISTEN_ADDR=0.0.0.0:1055
+    volumes:
+      - allen-tailscale-state:/var/lib/tailscale
 
   # ---------------------------------------------------------------------------
   # RECONCILE: the two services below are reference stubs. Confirm every value
@@ -170,3 +219,4 @@ volumes:
   allen-pgdata:
   allen-caddy-data:
   allen-caddy-config:
+  allen-tailscale-state:

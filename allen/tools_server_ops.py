@@ -112,7 +112,14 @@ def _parse_mcp_response(resp: requests.Response) -> dict:
 
 def _call(tool_name: str, arguments: dict) -> dict:
     """POST one MCP tools/call request to server-ops. Raises on transport failure; returns the
-    parsed JSON-RPC response (caller checks for an 'error' key or result.isError) otherwise."""
+    parsed JSON-RPC response (caller checks for an 'error' key or result.isError) otherwise.
+
+    Routed through settings.piaar_serverops_proxy (the tailscale-serverops sidecar's HTTP
+    forward proxy, when configured) via requests' per-call `proxies=` argument — deliberately
+    NOT a container-wide HTTP_PROXY/HTTPS_PROXY env var, which would silently route every other
+    tool's traffic (Anthropic, Gmail, Drive, ClickUp, ...) through the tailnet too. Empty proxy
+    setting means a direct connection, matching requests' own default."""
+    proxy = settings.piaar_serverops_proxy
     resp = requests.post(
         settings.piaar_serverops_endpoint,
         headers={
@@ -126,6 +133,7 @@ def _call(tool_name: str, arguments: dict) -> dict:
             "method": "tools/call",
             "params": {"name": tool_name, "arguments": arguments},
         },
+        proxies={"http": proxy, "https": proxy} if proxy else None,
         timeout=30,
     )
     resp.raise_for_status()

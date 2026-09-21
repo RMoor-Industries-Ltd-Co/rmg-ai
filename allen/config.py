@@ -197,6 +197,16 @@ class Settings(BaseSettings):
     # just enough to call the 13 read-only tools that caller is granted.
     piaar_serverops_endpoint: str = ""   # e.g. http://<piaar-preview tailnet IP>:8793/mcp
     piaar_key_serverops_allen: str = ""  # sent as the x-piaar-key header, never logged
+    # This container reaches the tailnet only through a Tailscale sidecar's HTTP forward proxy
+    # (infra/docker-compose.prod.yml's `tailscale-serverops` service) — never network_mode:
+    # host, which would also sever this container's existing Caddy ingress and its own
+    # DATABASE_URL egress (both currently resolved via the compose bridge network, which host
+    # networking opts out of). Scoped to ONLY this one client's requests (tools_server_ops.py),
+    # not a container-wide HTTP_PROXY env var, so no other tool's traffic (Anthropic, Gmail,
+    # Drive, ...) is affected. Empty means "no proxy" — direct connection, which only works if
+    # PIAAR_SERVEROPS_ENDPOINT is itself reachable without one (never true for a tailnet-only
+    # address in production).
+    piaar_serverops_proxy: str = ""      # e.g. http://tailscale-serverops:1055
 
     # Cappo's cached executive report (distinct from cappo_agent_url, which is the live
     # delegate_to_cappo task endpoint). Defaults to the same host's /api/agent/report.
