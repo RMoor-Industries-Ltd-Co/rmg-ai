@@ -94,6 +94,70 @@ doppler run -- docker compose up -d --force-recreate allen
 This changes **no Doppler values and rotates no keys** — it only tells compose to forward the
 already-present host env vars into the container.
 
+## The `tailscale-serverops` sidecar (ALLEN → server-ops reachability)
+
+`allen` reaches `rmg-piaar-mcps`'s server-ops-gateway (rmg-piaar-mcps#22) over a Tailscale
+route, since that gateway is deliberately unreachable from the public internet. The decision
+this section records: **a Tailscale sidecar container, not `network_mode: host` on `allen`.**
+
+`network_mode: host` was the other option considered and rejected. `allen` currently has no
+`networks:`/`network_mode` override at all — it sits on the default compose bridge network,
+where Caddy reaches it as `allen:8090` and it reaches Postgres as `db` (`DATABASE_URL`). Host
+networking is mutually exclusive with that: `allen` would drop off the bridge network entirely,
+so Caddy could no longer resolve it and `allen` could no longer resolve `db`, for no reachability
+gain that a sidecar doesn't already provide. Making host networking work again would mean also
+moving `caddy` (and re-plumbing `db` reachability) to match — a much larger, riskier change to
+a live production service than adding one new, otherwise-inert service.
+
+The sidecar instead joins the same default network as `allen`/`caddy`/`db` (again, no network
+overrides) and exposes only an HTTP forward proxy on that internal network
+(`TS_OUTBOUND_HTTP_PROXY_LISTEN_ADDR`). `allen` reaches it via `PIAAR_SERVEROPS_PROXY`, used
+by **only** `tools_server_ops.py`'s one client function — never a container-wide
+`HTTP_PROXY`/`HTTPS_PROXY` env var, which would silently route Anthropic/Gmail/Drive/ClickUp
+traffic through the tailnet too.
+
+### First-time setup (once, not part of the routine ALLEN redeploy)
+
+1. Create a Tailscale auth key (reusable or ephemeral, whichever your tailnet's admin policy
+   prefers) scoped to this tailnet, and store it in Doppler (`allen-i-verse`/`prd`) as
+   `TS_AUTHKEY`. See `.env.example`.
+2. Bring the sidecar service definition onto the server the same way the rest of this file's
+   content reaches it (Path A/B above), then start it explicitly — the routine deploy command
+   only names `allen`, deliberately (this sidecar's image changes far less often):
+   ```bash
+   doppler run -- docker compose up -d tailscale-serverops
+   ```
+3. Confirm it registered on the tailnet (`tailscale status` from the Tailscale admin console,
+   or `docker compose exec tailscale-serverops tailscale status`) before expecting
+   `PIAAR_SERVEROPS_ENDPOINT` calls to succeed.
+4. Redeploy `allen` as usual so it picks up `PIAAR_SERVEROPS_PROXY`:
+   ```bash
+   doppler run -- docker compose up -d --force-recreate allen
+   ```
+
+**Not verified against a live Tailscale image from this session** — the exact `TS_*` variable
+names in `infra/docker-compose.prod.yml` are Tailscale's documented HTTP-forward-proxy sidecar
+shape, but confirm them against Tailscale's current Docker image docs before relying on them,
+rather than trusting the compose file's comments blind.
+
+### Rollback
+
+Removing this capability touches nothing else: stop and remove the one service, drop the one
+env var, and every other ALLEN capability is unaffected (Caddy ingress, `db`, every other
+downstream agent board).
+
+```bash
+docker compose stop tailscale-serverops
+docker compose rm -f tailscale-serverops
+# Remove PIAAR_SERVEROPS_PROXY from allen's environment: block, then:
+doppler run -- docker compose up -d --force-recreate allen
+```
+
+`server_ops_ready` (allen/config.py) only requires `PIAAR_SERVEROPS_ENDPOINT` +
+`PIAAR_KEY_SERVEROPS_ALLEN`; leaving `PIAAR_SERVEROPS_PROXY` unset after a rollback just means
+those calls go direct and fail (expected, since the endpoint is tailnet-only) rather than
+crashing anything else.
+
 ## Validation
 
 ```bash
