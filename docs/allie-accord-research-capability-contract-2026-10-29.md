@@ -1,8 +1,8 @@
 ALLEN/ALLIE research capability and verification note:
 
-# Accord Intelligence-to-Publication Coordination Amendment (PROPOSED)
+# Accord Intelligence-to-Publication Coordination Amendment (RATIFIED)
 Date: 2026-10-29
-Status: Draft for Founder 55 / Founder 88 review; not adopted governance or proof of deployed automation.
+Status: Ratified by Founder 55's express merge authorization on 2026-10-29; binding as a coordination amendment on main. Ratification is not proof of deployed automation.
 
 ## Founding instruction
 ALLEN-I-VERSE is the combined business operating intelligence of ALLEN and ALLIE. ALLEN coordinates and routes; ALLIE is the research/intelligence agent within rmg-ai, combining source-monitored RSS-style intelligence and deeper research. A missing connector in CC or ChatGPT is not evidence that ALLIE does not exist. Conversely, an existing ALLIE agent does not prove that a scheduled RSS collector, external invocation endpoint, or Accord job is deployed; verify those capabilities and report gaps.
