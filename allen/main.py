@@ -95,7 +95,17 @@ def current_project(x_allen_key: str | None = Header(default=None)) -> dict:
             return proj
         # fall back to the shared key as the default 'atelier' project
         if settings.allen_api_key and x_allen_key == settings.allen_api_key:
-            return {"id": "proj-atelier", "name": "Master Atelier", "namespace": "atelier"}
+            # The shared ALLEN_API_KEY identity -- the one credential this deployment
+            # has actually configured for cross-service calls today, before any
+            # per-caller Accord-research key is minted via POST /projects. Granting
+            # 'accord_research' here, explicitly, in code, is the deliberate
+            # least-privilege line for this identity; a dedicated per-caller
+            # credential (capabilities=["accord_research"] via POST /projects)
+            # replaces this for a specific external system going forward.
+            return {
+                "id": "proj-atelier", "name": "Master Atelier", "namespace": "atelier",
+                "capabilities": ["accord_research"],
+            }
         raise HTTPException(401, "invalid or missing API key")
     # stateless mode: single shared key, one namespace
     if settings.allen_api_key and x_allen_key != settings.allen_api_key:
@@ -106,6 +116,24 @@ def current_project(x_allen_key: str | None = Header(default=None)) -> dict:
 def require_admin(x_admin_key: str | None = Header(default=None)) -> None:
     if not settings.admin_api_key or x_admin_key != settings.admin_api_key:
         raise HTTPException(401, "admin key required")
+
+
+#: The complete set of capability strings POST /projects will accept -- a typo'd or
+#: future/unimplemented capability name must never silently mint a key that *looks*
+#: privileged but actually grants nothing, or vice versa.
+_KNOWN_CAPABILITIES = {"accord_research"}
+
+
+def require_accord_research(project: dict = Depends(current_project)) -> dict:
+    """Fail-closed capability gate for the Accord research service (Founder review
+    correction on PR #94): holding *some* valid project credential is authentication,
+    not authorization -- the credential must carry the 'accord_research' capability
+    explicitly, checked against the authenticated project row itself. A caller-supplied
+    `businessScope` in the request body is still validated for consistency inside
+    accord_research.submit, but it never grants authority; only this check does."""
+    if "accord_research" not in (project.get("capabilities") or []):
+        raise HTTPException(403, "this credential is not authorized for Accord research")
+    return project
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -205,8 +233,11 @@ def create_project_ep(req: CreateProjectRequest) -> dict:
         scope = registry.normalize_scope(req.mcp_scope)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+    unknown_caps = set(req.capabilities) - _KNOWN_CAPABILITIES
+    if unknown_caps:
+        raise HTTPException(400, f"unknown capability/capabilities: {sorted(unknown_caps)}")
     try:
-        return db.create_project(req.name, ns, mcp_scope=scope)
+        return db.create_project(req.name, ns, mcp_scope=scope, capabilities=req.capabilities)
     except Exception as exc:
         raise HTTPException(400, f"could not create project (name/namespace taken?): {exc}") from exc
 
@@ -247,13 +278,16 @@ def delete_memory(mem_id: str, project: dict = Depends(current_project)) -> dict
 
 
 @app.post("/api/research/accord")
-def post_accord_research(req: dict, project: dict = Depends(current_project)) -> dict:
+def post_accord_research(req: dict, project: dict = Depends(require_accord_research)) -> dict:
     """ALLIE Accord Research Service -- external invocation (CC BUILD DIRECTIVE —
-    RMG-AI / ALLIE Accord Research Service). `current_project` is the fail-closed
-    scoped-credential gate (directive §4); the business scope itself is validated inside
-    `accord_research.submit` against the request body's own `businessScope` field, since
-    this is a narrow, purpose-built endpoint rather than a general one keyed only by the
-    caller's identity. Idempotent by `requestId` (directive §8) -- see accord_research.py.
+    RMG-AI / ALLIE Accord Research Service). `require_accord_research` is the fail-closed
+    authorization gate (Founder review correction on PR #94: holding *any* valid project
+    key is not enough -- the credential must carry the 'accord_research' capability); the
+    business scope itself is still validated inside `accord_research.submit` against the
+    request body's own `businessScope` field for consistency, but authority comes only
+    from the authenticated project's capabilities, never from that body field. Idempotent
+    by `requestId`, AND a reused `requestId` with different content is a conflict, not a
+    silent replay -- see accord_research.py.
     """
     if not db.db_ready():
         raise HTTPException(503, "platform DB not configured")
@@ -261,13 +295,19 @@ def post_accord_research(req: dict, project: dict = Depends(current_project)) ->
         return accord_research.submit(req, project)
     except accord_research.ResearchRequestError as exc:
         raise HTTPException(400, str(exc)) from exc
+    except accord_research.ResearchConflictError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except accord_research.ResearchAccessError:
+        # Deliberately 404, not 403 -- a caller probing someone else's requestId must
+        # not be able to distinguish "exists but isn't yours" from "doesn't exist".
+        raise HTTPException(404, "unknown requestId") from None
 
 
 @app.get("/api/research/accord/{request_id}")
-def get_accord_research(request_id: str, project: dict = Depends(current_project)) -> dict:
+def get_accord_research(request_id: str, project: dict = Depends(require_accord_research)) -> dict:
     if not db.db_ready():
         raise HTTPException(503, "platform DB not configured")
-    status = accord_research.get_status(request_id)
+    status = accord_research.get_status(request_id, project)
     if not status:
         raise HTTPException(404, "unknown requestId")
     return status

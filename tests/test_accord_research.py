@@ -257,4 +257,150 @@ def test_submit_failure_is_recorded_as_failed_not_a_fabricated_completion(db_env
 @_needs_db
 def test_get_status_for_unknown_request_id_returns_none(db_env):
     db, request_id = db_env
-    assert accord_research.get_status(f"never-created-{uuid.uuid4().hex[:8]}") is None
+    caller = {"id": "proj-test", "namespace": "test"}
+    assert accord_research.get_status(f"never-created-{uuid.uuid4().hex[:8]}", caller) is None
+
+
+# --------------------------------------------------------------------------------------
+# Founder review correction (PR #94): ownership boundary, idempotency identity, and
+# synthesis-output contract enforcement -- all DB-dependent (skipped without DATABASE_URL)
+# --------------------------------------------------------------------------------------
+
+
+@_needs_db
+def test_get_status_for_someone_elses_request_returns_none_not_the_packet(db_env):
+    """A caller must not be able to retrieve another project's packet merely by
+    knowing/guessing its requestId -- this must read exactly like 'unknown', never
+    reveal that the request exists under a different owner."""
+    db, request_id = db_env
+    owner = {"id": "proj-owner", "namespace": "owner"}
+    stranger = {"id": "proj-stranger", "namespace": "stranger"}
+    db.create_accord_research_request(
+        request_id=request_id, business_scope="hvn_global", publication="accord",
+        topic="x", intake_id="i-1", manuscript_id="m-1", research_mode="VERIFICATION_ONLY",
+        requested_by="test", caller_project_id=owner["id"], input_json={"a": 1}, input_digest="digest-1",
+    )
+    assert accord_research.get_status(request_id, owner) is not None
+    assert accord_research.get_status(request_id, stranger) is None
+
+
+@_needs_db
+def test_submit_retry_from_a_different_caller_is_treated_as_access_denied(db_env):
+    """The same guard applies to the POST idempotent-replay path, not just GET: a
+    second project reusing the first project's requestId must not get back that
+    project's packet, even with byte-identical payload content."""
+    db, request_id = db_env
+    owner = {"id": "proj-owner", "namespace": "owner"}
+    stranger = {"id": "proj-stranger", "namespace": "stranger"}
+    payload = {**BASE_PAYLOAD, "requestId": request_id}
+
+    def fake_execute(request_row, payload):
+        return {
+            "packetId": f"pkt-{request_row['request_id']}", "requestId": request_row["request_id"],
+            "intakeId": payload["intakeId"], "manuscriptId": payload["manuscriptId"],
+            "publication": payload["publication"], "researchMode": payload["researchMode"],
+            "generatedAt": "2026-01-01T00:00:00+00:00", "sources": [], "findings": [],
+            "culturalRelevance": [], "factualRisks": [], "freshnessNotes": [], "confidence": "low",
+            "limitations": [], "inputDigest": request_row["input_digest"],
+            "outputDigest": "fixed-digest", "provenance": {"agent": "ALLIE"},
+        }
+
+    orig = accord_research._execute
+    accord_research._execute = fake_execute
+    try:
+        accord_research.submit(dict(payload), owner)
+        with pytest.raises(accord_research.ResearchAccessError):
+            accord_research.submit(dict(payload), stranger)
+    finally:
+        accord_research._execute = orig
+
+
+@_needs_db
+def test_submit_retry_with_different_content_is_rejected_as_a_conflict_not_a_silent_replay(db_env):
+    """Reusing a requestId for genuinely different content (a different topic here)
+    must be rejected outright -- it is an identity collision, never an idempotent
+    retry that quietly returns the first request's unrelated result."""
+    db, request_id = db_env
+    caller = {"id": "proj-test", "namespace": "test"}
+    first_payload = {**BASE_PAYLOAD, "requestId": request_id, "topic": "Topic A"}
+    second_payload = {**BASE_PAYLOAD, "requestId": request_id, "topic": "Topic B"}
+
+    def fake_execute(request_row, payload):
+        return {
+            "packetId": f"pkt-{request_row['request_id']}", "requestId": request_row["request_id"],
+            "intakeId": payload["intakeId"], "manuscriptId": payload["manuscriptId"],
+            "publication": payload["publication"], "researchMode": payload["researchMode"],
+            "generatedAt": "2026-01-01T00:00:00+00:00", "sources": [], "findings": [],
+            "culturalRelevance": [], "factualRisks": [], "freshnessNotes": [], "confidence": "low",
+            "limitations": [], "inputDigest": request_row["input_digest"],
+            "outputDigest": "fixed-digest", "provenance": {"agent": "ALLIE"},
+        }
+
+    orig = accord_research._execute
+    accord_research._execute = fake_execute
+    try:
+        accord_research.submit(dict(first_payload), caller)
+        with pytest.raises(accord_research.ResearchConflictError):
+            accord_research.submit(dict(second_payload), caller)
+    finally:
+        accord_research._execute = orig
+
+
+def test_sanitize_synthesis_keeps_only_a_sourced_fact_that_cites_a_real_fetched_source():
+    sources = [
+        {"sourceId": "src-1", "fetchOk": True},
+        {"sourceId": "src-2", "fetchOk": False},  # never fetched -- not a valid citation
+    ]
+    synthesis = {
+        "findings": [
+            {"statement": "Real, cited claim", "kind": "sourced-fact", "sourceIds": ["src-1"], "confidence": "high"},
+            {"statement": "Fabricated source", "kind": "sourced-fact", "sourceIds": ["src-99"], "confidence": "high"},
+            {"statement": "Cites an unfetched source", "kind": "sourced-fact", "sourceIds": ["src-2"], "confidence": "high"},
+            {"statement": "No citation at all", "kind": "sourced-fact", "sourceIds": [], "confidence": "high"},
+        ],
+    }
+    clean, limitations = accord_research._sanitize_synthesis(synthesis, sources)
+    assert [f["statement"] for f in clean["findings"]] == ["Real, cited claim"]
+    assert len(limitations) == 3
+
+
+def test_sanitize_synthesis_allows_uncited_interpretation_and_hypothesis():
+    synthesis = {
+        "findings": [
+            {"statement": "An interpretation", "kind": "interpretation", "sourceIds": [], "confidence": "low"},
+            {"statement": "A hypothesis", "kind": "hypothesis", "sourceIds": [], "confidence": "low"},
+        ],
+    }
+    clean, limitations = accord_research._sanitize_synthesis(synthesis, [])
+    assert len(clean["findings"]) == 2
+    assert limitations == []
+
+
+@pytest.mark.parametrize(
+    "bad_finding",
+    [
+        {"statement": "", "kind": "interpretation", "confidence": "low"},
+        {"statement": "x", "kind": "not-a-real-kind", "confidence": "low"},
+        {"statement": "x", "kind": "interpretation", "confidence": "not-a-real-confidence"},
+        {"statement": "x", "kind": "interpretation"},  # missing confidence entirely
+        "not-even-an-object",
+    ],
+)
+def test_sanitize_synthesis_drops_malformed_findings(bad_finding):
+    clean, limitations = accord_research._sanitize_synthesis({"findings": [bad_finding]}, [])
+    assert clean["findings"] == []
+    assert len(limitations) == 1
+
+
+def test_sanitize_synthesis_coerces_non_list_or_non_string_fields_to_safe_defaults():
+    synthesis = {
+        "findings": "not-a-list",
+        "culturalRelevance": ["ok", 123, None],
+        "factualRisks": "also-not-a-list",
+        "freshnessNotes": None,
+    }
+    clean, limitations = accord_research._sanitize_synthesis(synthesis, [])
+    assert clean == {
+        "findings": [], "culturalRelevance": ["ok"], "factualRisks": [], "freshnessNotes": [],
+    }
+    assert len(limitations) == 1  # only 'findings' was non-None-and-wrong-type

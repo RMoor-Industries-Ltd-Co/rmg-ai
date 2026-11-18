@@ -44,6 +44,22 @@ class ResearchRequestError(ValueError):
     """A malformed or unsupported request -- maps to HTTP 400, never a fabricated 200."""
 
 
+class ResearchConflictError(ValueError):
+    """A `requestId` that already exists was reused with different content -- this is an
+    identity collision, not an idempotent retry, and must never silently return the
+    original (different) request's packet. Maps to HTTP 409."""
+
+
+class ResearchAccessError(LookupError):
+    """A `requestId` exists but does not belong to the authenticated caller. Maps to
+    HTTP 404 (never 403) at the route layer -- a caller must not be able to distinguish
+    "exists but isn't yours" from "doesn't exist" by probing requestIds."""
+
+
+_VALID_FINDING_KINDS = {"sourced-fact", "interpretation", "hypothesis"}
+_VALID_CONFIDENCE_VALUES = {"low", "medium", "high"}
+
+
 def canonical_json(value) -> str:
     """Deterministic JSON text for digesting: sorted keys, no incidental whitespace, so the
     same logical content always produces the same digest regardless of dict insertion order
@@ -193,6 +209,75 @@ def _synthesize(
     return parsed
 
 
+def _sanitize_synthesis(synthesis: dict, sources: list[dict]) -> tuple[dict, list[str]]:
+    """Enforces the packet contract on model output before any of it is ever persisted
+    (Founder review correction on PR #94): `_SYNTHESIS_SYSTEM` only *asks* the model to
+    follow the kind/confidence/sourceId rules -- it cannot guarantee it. A hallucinated
+    sourceId, a 'sourced-fact' with no real citation, or an unsupported kind/confidence
+    value must never reach a durable packet. Invalid findings are dropped, never
+    silently repaired into something that looks valid, and every drop becomes an
+    explicit limitation so the gap stays visible rather than hidden. Returns
+    (sanitized synthesis dict, extra limitation strings)."""
+    valid_source_ids = {s["sourceId"] for s in sources if s.get("fetchOk")}
+    limitations: list[str] = []
+    clean_findings = []
+
+    raw_findings = synthesis.get("findings")
+    if not isinstance(raw_findings, list):
+        raw_findings = []
+        if synthesis.get("findings") is not None:
+            limitations.append("Dropped the model's 'findings' value: not a list.")
+
+    for i, finding in enumerate(raw_findings):
+        if not isinstance(finding, dict):
+            limitations.append(f"Dropped finding at index {i}: not an object.")
+            continue
+        statement = finding.get("statement")
+        kind = finding.get("kind")
+        confidence = finding.get("confidence")
+        raw_source_ids = finding.get("sourceIds")
+        raw_source_ids = raw_source_ids if isinstance(raw_source_ids, list) else []
+
+        if not isinstance(statement, str) or not statement.strip():
+            limitations.append(f"Dropped finding at index {i}: missing or invalid 'statement'.")
+            continue
+        if kind not in _VALID_FINDING_KINDS:
+            limitations.append(f"Dropped finding at index {i}: unsupported kind {kind!r}.")
+            continue
+        if confidence not in _VALID_CONFIDENCE_VALUES:
+            limitations.append(f"Dropped finding at index {i}: unsupported confidence {confidence!r}.")
+            continue
+
+        cited_source_ids = [sid for sid in raw_source_ids if isinstance(sid, str) and sid in valid_source_ids]
+        if kind == "sourced-fact" and not cited_source_ids:
+            limitations.append(
+                f"Dropped finding at index {i}: kind 'sourced-fact' cited no real, fetched "
+                "sourceId -- a factual claim is never promoted to the packet without one."
+            )
+            continue
+
+        clean_findings.append(
+            {
+                "statement": statement,
+                "kind": kind,
+                "sourceIds": cited_source_ids,
+                "confidence": confidence,
+                "notes": finding.get("notes") if isinstance(finding.get("notes"), str) else "",
+            }
+        )
+
+    def _string_list(value) -> list[str]:
+        return [v for v in value if isinstance(v, str)] if isinstance(value, list) else []
+
+    clean = {
+        "findings": clean_findings,
+        "culturalRelevance": _string_list(synthesis.get("culturalRelevance")),
+        "factualRisks": _string_list(synthesis.get("factualRisks")),
+        "freshnessNotes": _string_list(synthesis.get("freshnessNotes")),
+    }
+    return clean, limitations
+
+
 def _execute(request_row: dict, payload: dict) -> dict:
     """Performs the research this service can actually do today and returns the completed
     packet dict. Raises on a genuine execution failure (e.g. the LLM call itself erroring)
@@ -221,6 +306,8 @@ def _execute(request_row: dict, payload: dict) -> dict:
     )
     if synthesis.get("_synthesisError"):
         limitations.append(synthesis["_synthesisError"])
+    synthesis, synthesis_limitations = _sanitize_synthesis(synthesis, sources)
+    limitations.extend(synthesis_limitations)
 
     confidence = "low"
     if any(s.get("fetchOk") for s in sources) and synthesis.get("findings"):
@@ -304,6 +391,21 @@ def submit(payload: dict, caller_project: dict) -> dict:
         input_digest=input_digest,
     )
     if not created:
+        # Ownership first: a caller must not be able to tell "this requestId exists but
+        # belongs to someone else" apart from "it doesn't exist" (Founder review
+        # correction on PR #94). Checked before the content-conflict check below so a
+        # mismatched caller never learns anything about the other caller's request,
+        # including whether its content differs from theirs.
+        if request_row.get("caller_project_id") != caller_project.get("id"):
+            raise ResearchAccessError(payload["requestId"])
+        if request_row["input_digest"] != input_digest:
+            # Same requestId, different content: this is an identity collision, not an
+            # idempotent retry -- returning the old (different) packet here would be
+            # silently wrong, not merely stale.
+            raise ResearchConflictError(
+                f"requestId {payload['requestId']!r} already exists with different input "
+                "-- reusing a requestId for different content is not an idempotent retry"
+            )
         return _status_response(request_row)
 
     db.update_accord_research_request_status(payload["requestId"], "running", mark_started=True)
@@ -319,9 +421,13 @@ def submit(payload: dict, caller_project: dict) -> dict:
     return _status_response(db.get_accord_research_request(payload["requestId"]))
 
 
-def get_status(request_id: str) -> Optional[dict]:
-    """The GET /api/research/accord/{requestId} entrypoint's logic."""
+def get_status(request_id: str, caller_project: dict) -> Optional[dict]:
+    """The GET /api/research/accord/{requestId} entrypoint's logic. Returns None both
+    when the request genuinely doesn't exist and when it exists but belongs to a
+    different authenticated project -- the route maps either to a plain 404, never
+    distinguishing "not yours" from "doesn't exist" (Founder review correction on
+    PR #94)."""
     row = db.get_accord_research_request(request_id)
-    if not row:
+    if not row or row.get("caller_project_id") != caller_project.get("id"):
         return None
     return _status_response(row)

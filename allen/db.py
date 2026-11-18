@@ -74,6 +74,12 @@ def init_db() -> None:
             -- fabric issues one credential per principal, so the scope follows the
             -- authenticated key rather than the process. See mcp_server.scope_for_project.
             ALTER TABLE projects ADD COLUMN IF NOT EXISTS mcp_scope text;
+            -- Explicit, least-privilege capability grants (e.g. "accord_research") --
+            -- authorization, distinct from mcp_scope (which is about the MCP fleet,
+            -- allen|allie) and never inferred from anything in a request body. Holding a
+            -- valid project key proves authentication; a route gated on a capability
+            -- checks this column, and defaults to empty (fail closed) for every key.
+            ALTER TABLE projects ADD COLUMN IF NOT EXISTS capabilities text[] NOT NULL DEFAULT '{}';
             CREATE TABLE IF NOT EXISTS memories (
                 id text PRIMARY KEY,
                 namespace text NOT NULL,
@@ -445,7 +451,8 @@ def project_by_key(key: str) -> Optional[dict]:
         return None
     with _cursor() as cur:
         cur.execute(
-            "SELECT id, name, namespace, mcp_scope FROM projects WHERE api_key = %s", (key,)
+            "SELECT id, name, namespace, mcp_scope, capabilities FROM projects WHERE api_key = %s",
+            (key,),
         )
         return cur.fetchone()
 
@@ -456,7 +463,9 @@ def list_projects() -> list[dict]:
         return list(cur.fetchall())
 
 
-def create_project(name: str, namespace: str, mcp_scope: Optional[str] = None) -> dict:
+def create_project(
+    name: str, namespace: str, mcp_scope: Optional[str] = None, capabilities: Optional[list[str]] = None
+) -> dict:
     """Mint a project + its API key, at the intended MCP scope from the first instant.
 
     ``mcp_scope`` is written in the SAME INSERT as the key rather than patched in
@@ -468,18 +477,24 @@ def create_project(name: str, namespace: str, mcp_scope: Optional[str] = None) -
     validated: this is the only writer of the column, and the column has no CHECK
     constraint, so a future caller reaching the data layer directly must not be able to
     write a value the read side would then quietly downgrade to least privilege.
+
+    ``capabilities`` follows the same same-INSERT rule and the same default-to-least-
+    privilege posture: omitted or empty means this key can reach no capability-gated
+    route (e.g. the Accord research service) -- a key is never capable of anything by
+    default, only by an explicit grant written here.
     """
     from . import registry  # deferred: registry imports db at module scope
 
     scope = registry.normalize_scope(mcp_scope)
+    caps = list(capabilities or [])
     key = "av_" + secrets.token_urlsafe(24)
     pid = f"proj-{namespace}"
     with _cursor() as cur:
         cur.execute(
-            "INSERT INTO projects (id, name, namespace, api_key, mcp_scope) "
-            "VALUES (%s, %s, %s, %s, %s) "
-            "RETURNING id, name, namespace, mcp_scope",
-            (pid, name, namespace, key, scope),
+            "INSERT INTO projects (id, name, namespace, api_key, mcp_scope, capabilities) "
+            "VALUES (%s, %s, %s, %s, %s, %s) "
+            "RETURNING id, name, namespace, mcp_scope, capabilities",
+            (pid, name, namespace, key, scope, caps),
         )
         row = cur.fetchone()
     return {**row, "api_key": key}

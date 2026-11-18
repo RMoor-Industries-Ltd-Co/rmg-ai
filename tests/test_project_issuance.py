@@ -87,13 +87,16 @@ class _FakeCreate:
     def __init__(self):
         self.calls = []
 
-    def __call__(self, name, namespace, mcp_scope=None):
-        self.calls.append({"name": name, "namespace": namespace, "mcp_scope": mcp_scope})
+    def __call__(self, name, namespace, mcp_scope=None, capabilities=None):
+        self.calls.append(
+            {"name": name, "namespace": namespace, "mcp_scope": mcp_scope, "capabilities": capabilities or []}
+        )
         return {
             "id": f"proj-{namespace}",
             "name": name,
             "namespace": namespace,
             "mcp_scope": mcp_scope,
+            "capabilities": capabilities or [],
             "api_key": "av_fake",
         }
 
@@ -113,7 +116,10 @@ def test_route_passes_scope_to_the_data_layer(fake_db, scope):
     out = main.create_project_ep(req)
 
     assert fake_db.calls == [
-        {"name": f"PIAAR Business — {scope}", "namespace": f"{scope}-business", "mcp_scope": scope}
+        {
+            "name": f"PIAAR Business — {scope}", "namespace": f"{scope}-business",
+            "mcp_scope": scope, "capabilities": [],
+        }
     ]
     assert out["mcp_scope"] == scope
     assert out["api_key"], "the key is returned once, here, or it is unrecoverable"
@@ -213,6 +219,95 @@ def test_omitted_scope_stores_null_and_follows_the_process_default(issued, monke
 
     monkeypatch.setattr(type(settings), "mcp_scope", property(lambda self: "allen"), raising=False)
     assert mcp_server.scope_for_project(resolved) == "allen", "NULL must follow the process default"
+
+
+# --------------------------------------------------------------------------------------
+# Capability grants — the authorization boundary for the Accord research service
+# (Founder review correction on PR #94). Authentication (a valid key) and authorization
+# (what that key may do) are deliberately two different checks.
+# --------------------------------------------------------------------------------------
+
+
+def test_route_rejects_an_unknown_capability_with_400(fake_db):
+    req = CreateProjectRequest(name="Bad", namespace="bad-cap", capabilities=["not_a_real_capability"])
+    with pytest.raises(HTTPException) as exc:
+        main.create_project_ep(req)
+
+    assert exc.value.status_code == 400
+    assert fake_db.calls == [], "nothing may be written when a capability name is unrecognized"
+
+
+def test_route_passes_known_capabilities_to_the_data_layer(fake_db):
+    req = CreateProjectRequest(name="Accord caller", namespace="accord-caller", capabilities=["accord_research"])
+    out = main.create_project_ep(req)
+
+    assert fake_db.calls[0]["capabilities"] == ["accord_research"]
+    assert out["capabilities"] == ["accord_research"]
+
+
+def test_omitting_capabilities_defaults_to_none_granted():
+    """A key is never capable of anything by default -- fail closed."""
+    req = CreateProjectRequest(name="Plain", namespace="plain")
+    assert req.capabilities == []
+
+
+def test_require_accord_research_denies_a_project_with_no_capability():
+    with pytest.raises(HTTPException) as exc:
+        main.require_accord_research({"id": "proj-x", "capabilities": []})
+    assert exc.value.status_code == 403
+
+
+def test_require_accord_research_denies_a_project_with_other_capabilities_only():
+    with pytest.raises(HTTPException) as exc:
+        main.require_accord_research({"id": "proj-x", "capabilities": ["some_other_capability"]})
+    assert exc.value.status_code == 403
+
+
+def test_require_accord_research_denies_a_project_with_no_capabilities_key_at_all():
+    """A legacy row/stateless fallback with no 'capabilities' field at all must deny,
+    not crash and not fail open."""
+    with pytest.raises(HTTPException) as exc:
+        main.require_accord_research({"id": "proj-x"})
+    assert exc.value.status_code == 403
+
+
+def test_require_accord_research_allows_a_project_with_the_capability():
+    project = {"id": "proj-x", "capabilities": ["accord_research"]}
+    assert main.require_accord_research(project) is project
+
+
+@_needs_db
+def test_capabilities_are_stored_and_read_back():
+    from allen import db
+
+    db.init_db()
+    ns = f"test_cap_{uuid.uuid4().hex[:8]}"
+    try:
+        proj = db.create_project(f"Test {ns}", ns, capabilities=["accord_research"])
+        assert proj["capabilities"] == ["accord_research"]
+
+        resolved = db.project_by_key(proj["api_key"])
+        assert resolved["capabilities"] == ["accord_research"]
+    finally:
+        with db._cursor() as cur:
+            cur.execute("DELETE FROM projects WHERE namespace = %s", (ns,))
+
+
+@_needs_db
+def test_omitted_capabilities_stores_an_empty_array_not_null():
+    from allen import db
+
+    db.init_db()
+    ns = f"test_cap_{uuid.uuid4().hex[:8]}"
+    try:
+        proj = db.create_project(f"Test {ns}", ns)
+        assert proj["capabilities"] == []
+
+        resolved = db.project_by_key(proj["api_key"])
+        assert resolved["capabilities"] == []
+    finally:
+        with db._cursor() as cur:
+            cur.execute("DELETE FROM projects WHERE namespace = %s", (ns,))
 
 
 @_needs_db
