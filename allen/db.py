@@ -261,6 +261,46 @@ def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS error_log_ns_idx ON error_log (namespace, created_at DESC);
             CREATE INDEX IF NOT EXISTS error_log_offload_idx ON error_log (offloaded) WHERE NOT offloaded;
+
+            -- ALLIE Accord Research Service (allen/accord_research.py). One row per
+            -- external research request -- request_id is the caller's idempotency key,
+            -- UNIQUE at the DB level (not just a read-then-write check) so two concurrent
+            -- submissions of the same request_id cannot both win and create two durable
+            -- packets. input_json/input_digest are the exact validated request the service
+            -- received, so a retry's "is this the same request" check never depends on
+            -- chat history or caller memory.
+            CREATE TABLE IF NOT EXISTS accord_research_requests (
+                id text PRIMARY KEY,
+                request_id text UNIQUE NOT NULL,
+                business_scope text NOT NULL,
+                publication text NOT NULL,
+                topic text NOT NULL,
+                intake_id text NOT NULL,
+                manuscript_id text NOT NULL,
+                research_mode text NOT NULL,
+                status text NOT NULL DEFAULT 'queued',
+                requested_by text NOT NULL DEFAULT '',
+                caller_project_id text,
+                input_json jsonb NOT NULL,
+                input_digest text NOT NULL,
+                error text,
+                created_at timestamptz DEFAULT now(),
+                started_at timestamptz,
+                completed_at timestamptz
+            );
+            CREATE INDEX IF NOT EXISTS accord_research_requests_intake_idx
+                ON accord_research_requests (intake_id, manuscript_id);
+
+            -- The durable packet. request_id is UNIQUE -- exactly one packet per request,
+            -- ever; a re-execution after failure updates the request row's status, it does
+            -- not get a second packet row for the same request_id.
+            CREATE TABLE IF NOT EXISTS accord_research_packets (
+                id text PRIMARY KEY,
+                request_id text NOT NULL UNIQUE REFERENCES accord_research_requests(request_id),
+                packet_json jsonb NOT NULL,
+                output_digest text NOT NULL,
+                generated_at timestamptz DEFAULT now()
+            );
             """
         )
 
@@ -991,3 +1031,102 @@ def cancel_reminder(namespace: str, reminder_id: str) -> bool:
             (reminder_id, namespace),
         )
         return cur.rowcount > 0
+
+
+# ---- ALLIE Accord Research Service ----
+def create_accord_research_request(
+    *,
+    request_id: str,
+    business_scope: str,
+    publication: str,
+    topic: str,
+    intake_id: str,
+    manuscript_id: str,
+    research_mode: str,
+    requested_by: str,
+    caller_project_id: Optional[str],
+    input_json: dict,
+    input_digest: str,
+) -> tuple[bool, dict]:
+    """Idempotent at the DB level: ``request_id`` is UNIQUE, and the insert uses
+    ``ON CONFLICT ... DO NOTHING`` -- a race between two concurrent submissions of the
+    same request_id can only ever have one winner, never two packets. Returns
+    ``(created, row)``: ``created`` is True only for the caller whose INSERT actually
+    landed, so only that caller goes on to execute the research; a caller who hits the
+    conflict gets back the existing row and must NOT re-run anything."""
+    with _cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO accord_research_requests (
+                id, request_id, business_scope, publication, topic, intake_id,
+                manuscript_id, research_mode, status, requested_by, caller_project_id,
+                input_json, input_digest
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'queued', %s, %s, %s, %s)
+            ON CONFLICT (request_id) DO NOTHING
+            RETURNING id
+            """,
+            (
+                secrets.token_hex(16), request_id, business_scope, publication, topic,
+                intake_id, manuscript_id, research_mode, requested_by, caller_project_id,
+                json.dumps(input_json), input_digest,
+            ),
+        )
+        created = cur.fetchone() is not None
+        cur.execute(
+            "SELECT * FROM accord_research_requests WHERE request_id = %s", (request_id,)
+        )
+        return created, cur.fetchone()
+
+
+def get_accord_research_request(request_id: str) -> Optional[dict]:
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT * FROM accord_research_requests WHERE request_id = %s", (request_id,)
+        )
+        return cur.fetchone()
+
+
+def update_accord_research_request_status(
+    request_id: str, status: str, *, error: Optional[str] = None,
+    mark_started: bool = False, mark_completed: bool = False,
+) -> None:
+    sets = ["status = %s"]
+    params: list = [status]
+    if error is not None:
+        sets.append("error = %s")
+        params.append(error)
+    if mark_started:
+        sets.append("started_at = now()")
+    if mark_completed:
+        sets.append("completed_at = now()")
+    params.append(request_id)
+    with _cursor() as cur:
+        cur.execute(
+            f"UPDATE accord_research_requests SET {', '.join(sets)} WHERE request_id = %s",
+            tuple(params),
+        )
+
+
+def create_accord_research_packet(request_id: str, packet_json: dict, output_digest: str) -> dict:
+    with _cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO accord_research_packets (id, request_id, packet_json, output_digest)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (request_id) DO NOTHING
+            RETURNING id
+            """,
+            (secrets.token_hex(16), request_id, json.dumps(packet_json), output_digest),
+        )
+        cur.execute(
+            "SELECT * FROM accord_research_packets WHERE request_id = %s", (request_id,)
+        )
+        return cur.fetchone()
+
+
+def get_accord_research_packet(request_id: str) -> Optional[dict]:
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT * FROM accord_research_packets WHERE request_id = %s", (request_id,)
+        )
+        return cur.fetchone()

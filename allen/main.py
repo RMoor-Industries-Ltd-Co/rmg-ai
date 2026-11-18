@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import Response, PlainTextResponse
 
-from . import backup, brands, chat, db, docs, emotion, logs, mcp_server, meeting, metadata, registry, replies, scheduler, scripts, speech, topics, usage, web
+from . import accord_research, backup, brands, chat, db, docs, emotion, logs, mcp_server, meeting, metadata, registry, replies, scheduler, scripts, speech, topics, usage, web
 from .config import settings
 from .models import (
     ChatRequest,
@@ -123,6 +123,11 @@ def health(verify: bool = False) -> HealthResponse:
         "docs": "ok" if settings.docs_ready else "unconfigured",
         "db": db_status,
         "whatsapp": "ok" if settings.whatsapp_ready else "unconfigured",
+        # Directive §26: distinguishes "the HTTP server is alive" from "the Accord
+        # research adapter can actually do something" -- it needs both a reachable DB
+        # (to persist the durable request/packet) and a configured LLM (to synthesize
+        # findings from fetched excerpts). Never "ok" merely because the process is up.
+        "accord_research": "ok" if (settings.llm_ready and db_status == "ok") else "unconfigured",
     }
     # ALLEN's Drive directory targets (memory vault + backups) + last backup result.
     # ?verify=true live-probes each folder (a few Drive calls); default is cheap.
@@ -239,6 +244,33 @@ def delete_memory(mem_id: str, project: dict = Depends(current_project)) -> dict
         raise HTTPException(503, "platform DB not configured")
     db.delete_memory(project["namespace"], mem_id)
     return {"ok": True}
+
+
+@app.post("/api/research/accord")
+def post_accord_research(req: dict, project: dict = Depends(current_project)) -> dict:
+    """ALLIE Accord Research Service -- external invocation (CC BUILD DIRECTIVE —
+    RMG-AI / ALLIE Accord Research Service). `current_project` is the fail-closed
+    scoped-credential gate (directive §4); the business scope itself is validated inside
+    `accord_research.submit` against the request body's own `businessScope` field, since
+    this is a narrow, purpose-built endpoint rather than a general one keyed only by the
+    caller's identity. Idempotent by `requestId` (directive §8) -- see accord_research.py.
+    """
+    if not db.db_ready():
+        raise HTTPException(503, "platform DB not configured")
+    try:
+        return accord_research.submit(req, project)
+    except accord_research.ResearchRequestError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.get("/api/research/accord/{request_id}")
+def get_accord_research(request_id: str, project: dict = Depends(current_project)) -> dict:
+    if not db.db_ready():
+        raise HTTPException(503, "platform DB not configured")
+    status = accord_research.get_status(request_id)
+    if not status:
+        raise HTTPException(404, "unknown requestId")
+    return status
 
 
 @app.get("/brands")
