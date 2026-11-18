@@ -48,6 +48,7 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
         if getattr(self, "_tunnel_host", None):
             self._tunnel()
         context = self._context or ssl.create_default_context()
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
         self.sock = context.wrap_socket(self.sock, server_hostname=self.host)
 
 
