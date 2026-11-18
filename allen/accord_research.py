@@ -17,9 +17,11 @@ to change when deeper retrieval is added later.
 """
 
 import hashlib
+import ipaddress
 import json
 import logging
 import re
+import socket
 from datetime import datetime, timezone
 from typing import Optional
 from urllib.parse import urlparse
@@ -93,6 +95,27 @@ def _domain(url: str) -> str:
         return url
 
 
+def _is_safe_public_url(url: str) -> bool:
+    """SSRF guard: this URL comes straight from an external, authenticated API caller's
+    `sourceReferences`, not from a trusted internal agent loop -- unlike every other
+    `web_fetch` caller in this codebase (allen/registry.py's ALLEN/ALLIE tool dispatch,
+    which only ever runs a URL the model itself chose inside an already-trusted session).
+    Rejects anything but http(s), and resolves the hostname to make sure it is not a
+    loopback/private/link-local/reserved address (e.g. 127.0.0.1, 169.254.169.254 cloud
+    metadata, internal service IPs) before this service ever fetches it server-side."""
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            return False
+        for family, _, _, _, sockaddr in socket.getaddrinfo(parsed.hostname, None):
+            ip = ipaddress.ip_address(sockaddr[0])
+            if not ip.is_global:
+                return False
+        return True
+    except Exception:  # noqa: BLE001 -- any resolution/parse failure is treated as unsafe
+        return False
+
+
 def _fetch_founder_sources(source_refs: list[str]) -> tuple[list[dict], list[str]]:
     """Directly fetches each Founder-supplied URL (bounded). These are retained as
     `sourceKind: "founder-provided"` -- never relabeled as independently discovered
@@ -103,6 +126,23 @@ def _fetch_founder_sources(source_refs: list[str]) -> tuple[list[dict], list[str
     now = datetime.now(timezone.utc).isoformat()
 
     for url in source_refs[:MAX_SOURCE_REFERENCES]:
+        if not _is_safe_public_url(url):
+            sources.append(
+                {
+                    "sourceId": f"src-{len(sources) + 1}",
+                    "title": _domain(url),
+                    "publisher": _domain(url),
+                    "url": url,
+                    "publishedAt": None,
+                    "fetchedAt": now,
+                    "sourceKind": "founder-provided",
+                    "supports": [],
+                    "fetchOk": False,
+                    "excerpt": "",
+                }
+            )
+            limitations.append(f"Could not retrieve {url}: refused -- not a public http(s) address")
+            continue
         text = web_fetch(url)
         ok = not text.startswith(("HTTP ", "Failed to fetch"))
         sources.append(

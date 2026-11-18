@@ -120,6 +120,26 @@ def test_unfetchable_source_reference_is_recorded_as_a_limitation_not_a_fabricat
     assert any("Could not retrieve" in m for m in limitations)
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://127.0.0.1/secret",
+        "http://localhost:8090/admin",
+        "http://169.254.169.254/latest/meta-data/",
+        "file:///etc/passwd",
+        "ftp://example.com/x",
+        "http://[::1]/x",
+    ],
+)
+def test_ssrf_guard_refuses_non_public_or_non_http_targets(url):
+    """A request-provided sourceReference must never cause this server to fetch a
+    loopback/link-local/metadata/internal address, or anything but http(s)."""
+    sources, limitations = accord_research._fetch_founder_sources([url])
+    assert len(sources) == 1
+    assert sources[0]["fetchOk"] is False
+    assert any("refused" in m for m in limitations)
+
+
 def test_more_than_max_source_references_reports_a_truncation_limitation():
     many = [f"http://127.0.0.1:1/{i}" for i in range(accord_research.MAX_SOURCE_REFERENCES + 3)]
     sources, limitations = accord_research._fetch_founder_sources(many)
