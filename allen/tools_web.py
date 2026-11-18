@@ -1,10 +1,10 @@
 """Web fetch tool — lets ALLEN retrieve live web content for research."""
 
+import http.client
 import ipaddress
 import re
 import socket
-import urllib.error
-import urllib.request
+import ssl
 from urllib.parse import urlparse
 
 TOOLS = [
@@ -26,43 +26,104 @@ TOOLS = [
 ]
 
 
-def _is_safe_public_url(url: str) -> bool:
-    """SSRF guard: the url this fetches can come from an external, caller-supplied value
-    (e.g. accord_research.py's sourceReferences, submitted by an authenticated API
-    caller rather than chosen by the trusted agent loop). Reject anything but http(s),
-    and reject a hostname that resolves to a loopback/private/link-local/reserved
-    address (127.0.0.1, 169.254.169.254 cloud metadata, internal service IPs, etc.) —
-    checked here, immediately before the request is made, so every caller of this
-    function is covered rather than relying on each caller to pre-filter."""
-    try:
-        parsed = urlparse(url)
-        if parsed.scheme not in ("http", "https") or not parsed.hostname:
-            return False
-        for family, _, _, _, sockaddr in socket.getaddrinfo(parsed.hostname, None):
-            ip = ipaddress.ip_address(sockaddr[0])
-            if not ip.is_global:
-                return False
-        return True
-    except Exception:  # noqa: BLE001 -- any parse/resolution failure is treated as unsafe
-        return False
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    """An HTTPSConnection that opens its TCP socket to a pre-resolved, pre-validated IP
+    literal rather than re-resolving `self.host` at connect time -- `self.host` is kept
+    as the original hostname purely for the TLS SNI/certificate check and the Host
+    header, so this is not a relaxation of certificate validation. This is what actually
+    closes the SSRF gap a hostname-only check leaves open: validating a *resolved name*
+    and then handing the *name* to a second, independent resolution (what plain
+    `urlopen(url)` does) is vulnerable to DNS rebinding -- the attacker's DNS can answer
+    differently the second time. Pinning the connection to the IP we already validated
+    removes that race entirely."""
+
+    def __init__(self, host: str, pinned_ip: str, *args, **kwargs):
+        super().__init__(host, *args, **kwargs)
+        self._pinned_ip = pinned_ip
+
+    def connect(self):
+        self.sock = socket.create_connection(
+            (self._pinned_ip, self.port), timeout=self.timeout, source_address=self.source_address
+        )
+        if getattr(self, "_tunnel_host", None):
+            self._tunnel()
+        context = self._context or ssl.create_default_context()
+        self.sock = context.wrap_socket(self.sock, server_hostname=self.host)
+
+
+class _PinnedHTTPConnection(http.client.HTTPConnection):
+    """Plain-HTTP counterpart of `_PinnedHTTPSConnection` -- same IP-pinning, no TLS."""
+
+    def __init__(self, host: str, pinned_ip: str, *args, **kwargs):
+        super().__init__(host, *args, **kwargs)
+        self._pinned_ip = pinned_ip
+
+    def connect(self):
+        self.sock = socket.create_connection(
+            (self._pinned_ip, self.port), timeout=self.timeout, source_address=self.source_address
+        )
+
+
+def _resolve_safe_ip(hostname: str) -> str:
+    """Resolves `hostname` and returns one global (public, routable) address, or raises
+    ValueError. Rejects loopback/private/link-local/reserved results (127.0.0.1,
+    169.254.169.254 cloud metadata, internal service IPs, etc.) -- used immediately
+    before the pinned connection is opened, so the hostname this service ever actually
+    connects to is always the one just validated here, not a second independent lookup."""
+    for family, _, _, _, sockaddr in socket.getaddrinfo(hostname, None):
+        ip = ipaddress.ip_address(sockaddr[0])
+        if ip.is_global:
+            return sockaddr[0]
+    raise ValueError(f"refused -- {hostname!r} does not resolve to a public address")
 
 
 def web_fetch(url: str) -> str:
-    """Fetch a URL and return stripped plain text (up to 5 000 chars)."""
-    if not _is_safe_public_url(url):
-        return f"Failed to fetch {url}: refused -- not a public http(s) address"
+    """Fetch a URL and return stripped plain text (up to 5 000 chars).
+
+    SSRF guard: the url this fetches can come from an external, caller-supplied value
+    (e.g. accord_research.py's `sourceReferences`, submitted by an authenticated API
+    caller rather than chosen by the trusted agent loop). Only http(s) is accepted, the
+    hostname must resolve to a public address, the TCP connection is pinned to exactly
+    that validated address (see `_PinnedHTTPSConnection`/`_PinnedHTTPConnection` --
+    closes the DNS-rebinding gap a check-then-separately-connect approach leaves open),
+    and redirects are never followed automatically (closes the SSRF-via-redirect gap --
+    a redirect target gets reported, not silently fetched, so it never bypasses this
+    same validation)."""
     try:
-        req = urllib.request.Request(
-            url,
-            headers={"User-Agent": "ALLEN-RMG/1.0 (research bot)"},
-        )
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            return f"Failed to fetch {url}: refused -- not a public http(s) address"
+
+        ip = _resolve_safe_ip(parsed.hostname)
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        path = parsed.path or "/"
+        if parsed.query:
+            path += "?" + parsed.query
+
+        conn_cls = _PinnedHTTPSConnection if parsed.scheme == "https" else _PinnedHTTPConnection
+        conn = conn_cls(parsed.hostname, ip, port, timeout=15)
+        try:
+            conn.request(
+                "GET", path,
+                headers={"User-Agent": "ALLEN-RMG/1.0 (research bot)", "Host": parsed.hostname},
+            )
+            resp = conn.getresponse()
+            if resp.status in (301, 302, 303, 307, 308):
+                # Never auto-follow -- a redirect target must pass this exact same
+                # validation as its own fetch, not be trusted because the original
+                # URL already was.
+                location = resp.getheader("Location", "(no Location header)")
+                return f"HTTP {resp.status} redirect from {url} to {location} (redirects are not followed)"
+            if resp.status >= 400:
+                return f"HTTP {resp.status} {resp.reason} from {url}"
             raw = resp.read(200_000)
             charset = "utf-8"
-            ct = resp.headers.get_content_charset()
-            if ct:
-                charset = ct
+            ct = resp.getheader("Content-Type", "")
+            if "charset=" in ct:
+                charset = ct.split("charset=", 1)[1].split(";")[0].strip()
             html = raw.decode(charset, errors="replace")
+        finally:
+            conn.close()
 
         # Strip scripts, styles, tags
         html = re.sub(r"<script[\s\S]*?</script>", " ", html, flags=re.IGNORECASE)
@@ -72,8 +133,6 @@ def web_fetch(url: str) -> str:
         text = re.sub(r"\s+", " ", html).strip()
         return text[:5_000] or "(page returned no text content)"
 
-    except urllib.error.HTTPError as e:
-        return f"HTTP {e.code} {e.reason} from {url}"
     except Exception as e:  # noqa: BLE001
         return f"Failed to fetch {url}: {e}"
 
