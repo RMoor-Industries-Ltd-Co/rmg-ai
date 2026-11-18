@@ -13,6 +13,13 @@ class CreateProjectRequest(BaseModel):
     #: Omitted or blank leaves the column NULL, so the key follows the process-wide
     #: MCP_SCOPE exactly as every key issued before per-key scope existed does.
     mcp_scope: Optional[str] = None
+    #: Explicit, least-privilege capability grants this key carries -- e.g.
+    #: "accord_research" for the ALLIE Accord Research Service (/api/research/accord).
+    #: Holding a valid project key is authentication; this is authorization, and it is
+    #: never inferred from mcp_scope or from anything in a request body. Defaults to no
+    #: capabilities at all (fail closed) rather than any key being able to reach every
+    #: capability-gated route.
+    capabilities: list[str] = Field(default_factory=list)
 
 
 # ---- usage & cost tracking ("$" console dashboard) — external ingestion ----
